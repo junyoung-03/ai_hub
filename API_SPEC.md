@@ -911,6 +911,18 @@ POST /api/internal/v1/process/items/{itemId}
 
 # 22. 개발 단계 상태
 
+## Phase 6A — Gmail ITEM 분석 실행
+
+`POST /api/v1/items/{itemId}/analyze`는 현재 로그인 사용자의 저장된 Gmail/email ITEM만 분석한다.
+동일 origin 요청만 허용한다. 클라이언트에서 user_id, 모델 또는 credential을 받지 않는다.
+동일 본문·모델·schemaVersion의 검증된 결과는 재사용한다. 새 출력은 전체 schema와 원문 Evidence
+검증을 통과한 뒤 서버 전용 RPC로 Classification + Action + Evidence + ITEM metadata를 원자 저장한다.
+응답 필드: `created_count`, `reused_count`, `action_count`, `cached`, `processing_status`.
+완료 상태는 `indexing`이며 검색/Embedding 완료를 의미하지 않는다.
+오류: 401 인증 필요, 403 origin 불일치, 404 소유 ITEM 없음, 409 분석 중/경합,
+422 입력·출력 검증 실패, 503 Gemini/저장 서비스 오류. 원문·Token·provider 오류 상세를 반환하지 않는다.
+Action 의미 병합이 불명확하거나 기존 후보가 사라지는 재분석은 자동 삭제/증식 대신 저장을 거부한다.
+
 ```text
 ✅ Wireframe
 ✅ DB Migration
@@ -920,3 +932,98 @@ POST /api/internal/v1/process/items/{itemId}
 → AI Structured Output
 ⬜ 실제 구현
 ```
+
+## 23. Phase 6B — ITEM Detail 조회 계약
+
+사용자 승인 범위: Phase 6A 저장 결과를 기존 ITEM 조회 API에 연결한다. UI/UX 설계,
+새 화면/컴포넌트 설계, DB Schema/Migration 변경, Gemini 호출은 포함하지 않는다.
+6B-1에서 아래 계약과 TypeScript 타입을 확정하고 6B-2에서 기존 GET 조회에 연결했다.
+**Phase 6B COMPLETE — 6B-3 통합 검증 및 인계 완료 (2026-10-04).**
+
+대상: `GET /api/v1/items/{itemId}`. TypeScript 기준: `src/types/items.ts`의 `ItemDetailResponse`.
+기존 `GET /api/v1/items`의 목록 계약/필터/정렬/Pagination은 변경하지 않는다.
+모든 신규 응답 필드는 6B-2 연결 후 항상 존재하며, 없는 단일 값은 null, 목록은 빈 배열이다.
+
+| 필드 | 타입 / 의미 |
+| --- | --- |
+| `item` | 기존 id/title/source/format/processingStatus/createdAt/updatedAt/contentText/sourceCreatedAt 유지 |
+| `classification` | 기존 EffectiveClassification 유지. `effectiveClassification`과 값이 동일한 호환 필드 |
+| `aiClassification` | Classification row의 ai_* 값: primaryTopic/documentType/tags. row가 없으면 null |
+| `userClassification` | user_* override: primaryTopic/documentType/tags. override가 모두 null이면 객체도 null |
+| `effectiveClassification` | 기존 effectiveClassification() 결과: primaryTopic/documentType/tags/origin/available/origins |
+| `actions` | 기존 Action 필드에 requirements/conditions/startDate/startAt/completedAt 추가 |
+| `evidence` | 기존 flat Evidence 배열 유지. 각 row는 ActionSource이며 actionId로 Action과 연결 |
+| `eventObservations` | items.metadata.aiAnalysis.result.eventObservations의 검증된 행사/일정 관찰값 |
+| `aiAnalysis` | 저장된 유효 v0.2 분석의 schemaVersion/analyzedAt만 반환. 없거나 검증 불가하면 null |
+| `processing` | 기존 status 유지. item.processingStatus와 같은 DB processing_status 값 |
+| `gmail`, `original` | 기존 whitelist header와 안전한 원본 URL / previewType 계약 유지 |
+
+### 분류 최종값
+
+각 필드에서 non-null user override > AI 값을 적용한다. user 필드의 null은 override 없음이며,
+user tags의 []는 명시적 전체 제거이므로 AI tags로 되돌리지 않는다. 분류 row가 없으면
+aiClassification/userClassification은 null, EffectiveClassification은 기존 unavailable 표현을 유지한다.
+부분 override 객체는 수정하지 않은 필드를 null로 보존한다. aiClassification의 tags는 배열이다.
+AI metadata의 후보 classification으로 DB classification이나 사용자 값을 대체하지 않는다.
+GET은 읽기만 수행하며 user_* 및 기존 분석 저장/재분석 보호 로직을 변경하지 않는다.
+
+### Action / Deadline / EventObservation
+
+Action은 기존 actions row만 반환하며 AI 후보에서 생성하지 않는다. 기존 필드
+id/title/type/status/deadlineStatus/deadlineDate/deadlineAt/deadlineSourceId를 유지한다.
+requirements/conditions는 string[], startDate/startAt/completedAt은 DB 값 또는 null이다.
+날짜는 YYYY-MM-DD, 시각은 저장된 timezone 포함 timestamp로 반환하며 새 날짜나 시간대를 추론하지 않는다.
+deadlineStatus=needs_review는 마감일 확인 필요, none은 마감 정보 없음이다.
+행사 관찰값을 deadline/startDate/Action으로 승격하지 않는다. completedAt은 기존 완료 상태 기록이다.
+
+EventObservation은 기존 v0.2 DateObservation의 제한된 타입을 재사용한다:
+confirmed이면 date:string, datetime:string|null; needs_review이면 date/datetime 모두 null.
+rawText:string과 원문 AnalysisEvidence가 필수이며 status=none은 행사 배열에 허용하지 않는다.
+유효한 분석 또는 행사 관찰값이 없으면 eventObservations=[]다. aiAnalysis=null과 유효 분석의 빈 배열은
+구분할 수 있다. 분석/행사 데이터는 현재 ITEM 원문과 저장된 검증 규칙에 맞는 경우만 반환한다.
+조회에서 모델 설정이나 credential을 요구하거나 Gemini를 호출하지 않는다.
+indexing을 completed로 변경하지 않는다.
+
+### Evidence / 보안 / 호환성
+
+evidence의 기존 id/actionId/itemId/text/locator/isCurrent/observedAt을 유지하고,
+observedDeadlineDate/observedDeadlineAt을 추가한다. 동일 Action의 다른 소유 ITEM 근거와 history도 유지한다.
+Action은 id당 1개, Evidence는 source id당 1개를 반환하며 history를 합치거나 지우지 않는다.
+각 Source의 원문에 있는 근거만 반환하고 확인되지 않는 AI 추론을 인용으로 만들지 않는다.
+
+locator는 kind/page/section/startChar/endChar/field 및 검증된 schemaVersion/evidence/
+startObservation/deadlineObservation만 허용한다. 내부 analysisKey 및 임의 JSON key는 제거한다.
+전체 인용은 locator.evidence에서, 시작/마감 관찰 근거는 해당 observation.evidence에서 확인한다.
+이 확장값이 없는 기존 locator도 지원하며 기존 허용 위치 필드는 보존한다.
+허용 목록 밖의 locator key에 의존하는 클라이언트에는 의도적인 보안 제한이 적용된다.
+raw items.metadata, 전체 aiAnalysis.result, model, inputFingerprint, Token, storage 경로,
+DB 내부 오류를 응답에 추가하지 않는다. 기존 권한 내 원문/메일 header 조회는 유지한다.
+
+requireUser(), 서버 세션 client, 모든 조회의 사용자 소유권 제한과 기존 RLS를 유지한다.
+다른 사용자 Source의 존재/원문은 노출하지 않는다. 인증/404/오류 및 private no-store 계약은 유지한다.
+신규 필드는 additive이며 기존 필드명과 의미는 유지한다. 별도 action_sources 응답 중복 배열은 만들지 않는다.
+
+### 6B-3 검증 결과 및 범위 (2026-10-04)
+
+- ai-hub-dev 저장 Gmail 46건: v0.2 분석 2건, Action 연결 ITEM 1건, 분석된 no-action ITEM 1건,
+  분석 metadata 없는 ITEM 44건. 서로 다른 실제 ITEM 3건으로 네 가지 요청 사례를 검증했다.
+- 실제 authenticated SQL principal로 RLS가 적용된 SELECT snapshot을 읽고, 기존 production
+  getItemDetail 및 GET handler를 read-only transport/auth adapter로 실행했다. Classification,
+  Action 1건, Evidence 1건, 기존 필드와 신규 필드, 원문 근거 및 중복 없음을 검증했다.
+  실제 Browser cookie 세션의 authenticated HTTP E2E를 재실행한 것으로 해석하지 않는다.
+- 해당 4개 핵심 테이블의 RLS enabled 확인. 타 실제 계정은 없어 별도 synthetic authenticated sub로
+  같은 실제 DB에서 소유 데이터 0건 및 handler 404를 확인했다. 사용자/세션 행을 만들지 않았다.
+  anon DB SELECT는 테이블 권한으로 거부됐다. 로컬 production HTTP의 미인증 ITEM 목록/Detail/
+  connections 요청은 401, Library는 로그인으로 redirect됐다. Detail 경로의 session client와
+  requireUser/소유권 필터 유지 및 admin/service_role client 미사용을 확인했다.
+- 실제 override 0건, eventObservations 0건. override/빈 tags/event-only/needs_review/시작일과
+  마감일 분리/malformed 분석 metadata는 기존 합성·격리 검증 PASS로 구분한다.
+  실제 event-date 적격 Gmail 샘플 없음이라는 Phase 6A 회귀 TODO를 유지한다.
+- 실제 Action의 deadline은 none/null이며 그대로 반환했다. 확정 마감일·시작일 매핑은 합성 검증 PASS다.
+- 원문·raw metadata·credential은 보고서에 기록하지 않았다. 실제 응답의 허용 key 및 로컬 Secret
+  값 비노출 검사 PASS, browser static 파일 17개에서 Secret 실제 값 일치 0건.
+- 검증 전후 소유 ITEM/Classification/Action/Source/Connection 조회 snapshot 동일.
+  DB 데이터·Schema·RLS·Migration/history 변경 없음, Gemini/Google 재수집 호출 없음.
+- npm test 52개, typecheck, lint, build, check:supabase, git diff --check 모두 PASS.
+  Auth 연결 검사의 최초 EACCES는 로컬 sandbox 네트워크 차단이며, 네트워크 허용 실행에서 PASS했다.
+  Google OAuth/세션 갱신/Logout/Re-login은 기존 mock 회귀 검증을 사용했으며 실제 OAuth를 재실행하지 않았다.

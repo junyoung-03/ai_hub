@@ -1087,3 +1087,35 @@ Codex는 위 항목을 임의로 확정된 요구사항처럼 처리하지 않�
 ```
 
 다음 설계 작업은 **Supabase PostgreSQL DB Migration v0.1**이다.
+
+## 33. 승인된 Implementation Phase 6A 범위 (2026-10-04)
+
+위 32절은 초기 기획 당시의 단계 기록이다. Phase 1–5 완료 후 저장된 Gmail ITEM만 Gemini로 분석하는
+Phase 6A를 구현한다. 출력 기준은 루트 AI_OUTPUT_SPEC.md / AI_OUTPUT_SCHEMA.json v0.2이며,
+eventObservations를 Action과 독립적으로 items.metadata.aiAnalysis에 저장하고 schemaVersion="0.2"를 보존한다.
+description은 추가하지 않는다. 기존 테이블 구조·Gmail 수집·Notion 원본은 변경하지 않는다.
+승인된 persist_gmail_item_analysis 서버 전용 RPC로 Classification + Action + Evidence를 단일 transaction에
+저장한다. 사용자 override와 기존 Action 완료 상태를 유지한다. 실패는 전체 rollback하며,
+같은 본문·모델·버전은 재사용한다. 모호한 Action 재매칭은 자동 증식/삭제 대신 저장 오류로 처리한다.
+분석 성공은 indexing 대기이며 Search/Embedding 완료가 아니다. 실제 Gmail 검증은 최대 5개 ITEM이다.
+AI 생성에 전달하는 구조 스키마는 provider 지원 subset이며, 저장 전 전체 v0.2 schema·Evidence·날짜 검증은 필수다.
+검색/UI 고도화/Drive/Calendar/Upload/Phase 6B는 이 범위에 포함하지 않는다.
+
+## 34. 승인된 Implementation Phase 6B 완료 (2026-10-04)
+
+**Phase 6B COMPLETE.** Phase 6A 저장 결과를 기존 ITEM Detail 조회 API와 TypeScript 데이터 계약에
+연결했다. 6B-1은 조회 계약·타입 확정, 6B-2는 실제 조회 연결, 6B-3는 통합 검증 및 인계다.
+기존 응답을 유지하며 AI/User/Effective 분류, DB Action의 requirements/conditions/시작일/마감일/
+완료 상태, Source Evidence 및 독립된 eventObservations, 안전한 AIAnalysis 요약을 조회한다.
+사용자 override 우선과 명시적 빈 tags를 보존한다. indexing은 검색/Embedding 대기 상태다.
+상세 필드 의미와 검증 범위는 API_SPEC.md 23절, 현재 인계 상태는 docs/PROJECT_STATE.md를 따른다.
+
+실제 개발 DB RLS principal의 읽기 전용 조회와 production 조회/GET handler adapter 검증 PASS.
+미인증 production HTTP 차단 PASS. 실제 Browser OAuth/인증 cookie E2E는 재실행하지 않았고,
+로그인·세션·Logout/Re-login은 기존 mock 회귀로 검증했다. 실제 override/행사 관찰값 샘플은 없으며
+합성 검증 PASS와 구분한다. 실제 event-date Gmail 회귀 TODO는 Phase 6A 기록대로 유지한다.
+52개 격리 테스트, typecheck/lint/build/Supabase 연결 검사/diff 검사 PASS.
+
+이 Phase는 새로운 UI/UX, API 업무 기능, DB Schema/Migration/RLS 변경 또는 Gemini 재분석을
+포함하지 않는다. AI 출력 Schema/Prompt와 기존 분석 저장 구조를 변경하지 않았다.
+다음 단계의 명칭·목표·범위는 사용자 지시로 별도 확정하며, 이 완료 기록은 후속 구현 승인이 아니다.

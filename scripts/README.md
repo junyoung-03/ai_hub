@@ -6,12 +6,14 @@
 
 | 명령 | 실행 파일 / 범위 | 외부 서비스 | 실제 DB 변경 |
 | --- | --- | --- | --- |
-| `npm test` 또는 `npm run test:isolated` | 아래 4개 격리 테스트 | 없음 | 없음 |
+| `npm test` 또는 `npm run test:isolated` | 아래 5개 격리 테스트 | 없음 | 없음 |
 | `npm run lint` | ESLint | 없음 | 없음 |
 | `npm run typecheck` | TypeScript | 없음 | 없음 |
 | `npm run build` | Next.js build | 현재 구현에서 없음 | 없음 |
 | `npm run check:supabase` | `check-supabase.mjs` | Supabase Auth 설정 GET | 없음 |
 | `npm run test:live:google-refresh` | `test-gmail-refresh-live.mjs` | 개발 Supabase 및 Google token/profile API | 테스트 계정의 암호화 Token bundle 갱신 |
+| `npm run test:live:analysis-db` | `test-analysis-db.mjs` | 개발 Supabase | 합성 데이터 transaction 후 전체 rollback |
+| `npm run test:live:analysis` | `test-analysis-live.mjs` | 개발 Supabase + Gemini | 최대 5개 실제 저장 Gmail ITEM 분석 저장 |
 
 ## 격리 테스트
 
@@ -23,8 +25,22 @@ npm test
 - `test-items.mjs`: 필터/Cursor, 사용자별 읽기, Detail whitelist, 안전한 오류 응답.
 - `test-gmail.mjs`: 합성 MIME/HTML/Header 파싱, Token 갱신 mock, 100건 상한, 중복/부분 실패/사용자 격리.
 - `test-google-connections.mjs`: 합성 Token의 AES-GCM roundtrip/tamper, RPC 인자, Refresh Token 유지/교체 및 연결 해제.
+- `test-analysis.mjs`: v0.2 schema, 원문/Unicode Evidence 위치, 날짜 구분, no-action, Gemini mock, 저장 전 validation 및 transaction retry/사용자 격리, 429/503 최대 재시도.
 
-Fixture는 메모리에 있으며 실제 메일, Secret 또는 DB 연결이 필요하지 않다. 마지막 파일은 기존 assertion suite를 Node test runner에서 하나의 파일 단위 테스트로 실행한다. 따라서 총 표시 개수는 35개 개별 테스트 + 1개 파일 단위 suite인 36개다.
+Fixture는 메모리에 있으며 실제 메일, Secret 또는 DB 연결이 필요하지 않다. Google Connection 파일은 기존 assertion suite를 하나의 파일 단위 테스트로 실행한다. Phase 6A는 9개 개별 검사를 추가한다.
+
+## Phase 6A 실제 분석 검증 — 명시적 실행
+
+`ANALYSIS_TEST_PROJECT=oclzdppdiljbojvqtkeu`를 명시하고 DB 검사는 Supabase CLI 인증이 필요하다.
+실제 분석은 추가로 `ANALYSIS_TEST_EMAIL`에 테스트 소유자를 지정하고 서버 Supabase Secret,
+`GEMINI_API_KEY`, `GEMINI_MODEL`을 설정한다. 환경값은 출력하지 않는다.
+`npm run test:live:analysis-db`는 합성 사용자/ITEM에 대해 저장·권한·override·중복·실패 rollback을
+검증한 뒤 전체 rollback한다. `--with-draft`는 함수 DDL도 같은 rollback transaction 안에서만 검증한다.
+`npm run test:live:analysis`는 실제 계정 소유권을 확인하고 서버 분석 코드를 최대 5개 ITEM에 실행한다.
+선택 ID는 Git-ignored `supabase/.temp/phase6a-selection.json`에 유지해 실패 후 재시도 대상을 늘리지 않는다.
+이미 성공한 결과는 캐시를 사용한다. 실제 Browser session 검사는 대체하지 않는다.
+Gemini는 ITEM당 최초 포함 최대 3회, 429/503만 제한적으로 재시도한다. 횟수를 소진하면 batch를 멈춘다.
+Gmail API·Attachment 다운로드는 실행하지 않으며 실제 분석 결과는 승인된 DB에 남긴다.
 
 개별 실행도 가능하다.
 

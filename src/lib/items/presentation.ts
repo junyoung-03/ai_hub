@@ -1,4 +1,6 @@
 import type { Enums, Json, Tables } from "@/types/database";
+import type { AnalysisEvidence, DateObservation } from "@/types/analysis";
+import type { EvidenceLocator } from "@/types/items";
 
 export type ClassificationValues = Pick<Tables<"classifications">,
   "ai_primary_topic" | "user_primary_topic" | "ai_document_type" | "user_document_type" | "ai_tags" | "user_tags">;
@@ -17,6 +19,77 @@ export function effectiveClassification(value: ClassificationValues | null) {
       tags: value?.user_tags != null ? "user" : "ai",
     },
   };
+}
+
+function jsonRecord(value: Json | undefined) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+/** Rebuild every JSON layer: selecting a safe outer key must not leak nested keys. */
+function locationFields(value: Json | undefined): Partial<AnalysisEvidence["locator"]> {
+  const row = jsonRecord(value);
+  if (!row) return {};
+  const result: Partial<AnalysisEvidence["locator"]> = {};
+  const kinds = ["text_span", "page", "email_section", "calendar_field", "metadata", "unknown"] as const;
+  const kind = kinds.find((entry) => entry === row.kind);
+  if (kind) result.kind = kind;
+  for (const key of ["page", "startChar", "endChar"] as const) {
+    const number = row[key];
+    if (number === null || (typeof number === "number" && Number.isSafeInteger(number) && number >= (key === "page" ? 1 : 0))) result[key] = number;
+  }
+  for (const key of ["section", "field"] as const) {
+    if (row[key] === null || typeof row[key] === "string") result[key] = row[key];
+  }
+  return result;
+}
+
+function storedQuote(value: Json | undefined): AnalysisEvidence | null {
+  const row = jsonRecord(value);
+  if (!row || typeof row.text !== "string" || !row.text.trim()) return null;
+  const locator = locationFields(row.locator);
+  if (locator.kind === undefined || locator.page === undefined || locator.section === undefined
+    || locator.startChar === undefined || locator.endChar === undefined || locator.field === undefined) return null;
+  if (locator.kind === "text_span" && (locator.startChar === null || locator.endChar === null
+    || locator.endChar - locator.startChar !== Array.from(row.text).length)) return null;
+  return { text: row.text, locator: { kind: locator.kind, page: locator.page, section: locator.section,
+    startChar: locator.startChar, endChar: locator.endChar, field: locator.field } };
+}
+
+function storedObservation(value: Json | undefined): DateObservation | null {
+  const row = jsonRecord(value);
+  if (!row) return null;
+  if (row.status === "none") return [row.date, row.datetime, row.rawText, row.evidence].every((entry) => entry === null)
+    ? { status: "none", date: null, datetime: null, rawText: null, evidence: null } : null;
+  const evidence = storedQuote(row.evidence);
+  if (!evidence || typeof row.rawText !== "string" || !row.rawText.trim() || !evidence.text.includes(row.rawText)) return null;
+  if (row.status === "needs_review" && row.date === null && row.datetime === null) {
+    return { status: "needs_review", date: null, datetime: null, rawText: row.rawText, evidence };
+  }
+  if (row.status !== "confirmed" || typeof row.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) return null;
+  const date = new Date(`${row.date}T00:00:00Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== row.date) return null;
+  if (row.datetime !== null && (typeof row.datetime !== "string" || !row.datetime.startsWith(`${row.date}T`)
+    || !/(Z|[+-]\d{2}:\d{2})$/.test(row.datetime) || !Number.isFinite(Date.parse(row.datetime)))) return null;
+  return { status: "confirmed", date: row.date, datetime: row.datetime, rawText: row.rawText, evidence };
+}
+
+/** Only persisted Evidence is projected; no quotes or observations are generated. */
+export function safeEvidenceLocator(value: Json): EvidenceLocator {
+  const row = jsonRecord(value);
+  const result: EvidenceLocator = locationFields(value);
+  if (row?.schemaVersion !== "0.2") return result;
+  result.schemaVersion = "0.2";
+  if (Array.isArray(row.evidence) && row.evidence.length <= 5) {
+    result.evidence = row.evidence.flatMap((entry) => {
+      const quote = storedQuote(entry);
+      return quote ? [quote] : [];
+    });
+  }
+  for (const key of ["startObservation", "deadlineObservation"] as const) {
+    const observation = storedObservation(row[key]);
+    if (observation) result[key] = observation;
+  }
+  return result;
 }
 
 export const sourceLabels: Record<Enums<"item_source">, string> = {

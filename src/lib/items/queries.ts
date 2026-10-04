@@ -3,7 +3,10 @@ import "server-only";
 import { requireUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
 import { encodeCursor, filterLiteral, isItemId, type ItemQuery } from "@/lib/items/filters";
-import { effectiveClassification, safeOriginalUrl } from "@/lib/items/presentation";
+import { effectiveClassification, safeOriginalUrl, safeEvidenceLocator } from "@/lib/items/presentation";
+import { validateAnalysis } from "@/lib/gemini/validation";
+import type { Json } from "@/types/database";
+import type { Action, Evidence, EventObservation, ItemDetailResponse } from "@/types/items";
 
 export class ItemReadError extends Error {
   constructor() { super("자료를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."); }
@@ -69,7 +72,32 @@ export async function listItems(input: ItemQuery) {
   return { items, nextCursor: data.length > limit && last ? encodeCursor(last, input) : null };
 }
 
-export async function getItemDetail(itemId: string) {
+/** Reuses the existing local validator only: no Gemini client, model config or writes. */
+function storedAnalysis(metadata: Json, contentText: string | null): Pick<ItemDetailResponse, "aiAnalysis" | "eventObservations"> {
+  const empty = { aiAnalysis: null, eventObservations: [] };
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || contentText === null) return empty;
+  const artifact = metadata.aiAnalysis;
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact) || artifact.schemaVersion !== "0.2"
+    || typeof artifact.analyzedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:\d{2})$/.test(artifact.analyzedAt)
+    || !Number.isFinite(Date.parse(artifact.analyzedAt))) return empty;
+  try {
+    const result = validateAnalysis(artifact.result, contentText);
+    const eventObservations: EventObservation[] = result.eventObservations.flatMap((event): EventObservation[] => {
+      if (!event.rawText || !event.evidence) return [];
+      if (event.status === "confirmed" && event.date) return [{ status: "confirmed", date: event.date,
+        datetime: event.datetime, rawText: event.rawText, evidence: event.evidence }];
+      if (event.status === "needs_review") return [{ status: "needs_review", date: null,
+        datetime: null, rawText: event.rawText, evidence: event.evidence }];
+      return [];
+    });
+    return { aiAnalysis: { schemaVersion: "0.2", analyzedAt: artifact.analyzedAt }, eventObservations };
+  } catch {
+    // Missing, obsolete, malformed or unsupported-by-current-source artifacts are optional.
+    return empty;
+  }
+}
+
+export async function getItemDetail(itemId: string): Promise<ItemDetailResponse | null> {
   const user = await requireUser();
   if (!isItemId(itemId)) return null;
   const supabase = await createClient();
@@ -88,41 +116,49 @@ export async function getItemDetail(itemId: string) {
     return query;
   });
   const ids = [...new Set(itemSources.map((source) => source.action_id))];
-  const actions = [];
-  const evidence = [];
+  const actions: Action[] = [];
+  const evidence: Evidence[] = [];
   // Chunk IN filters to keep request URLs bounded. Related rows use keyset reads
   // so the PostgREST default maximum cannot silently truncate evidence/history.
   for (let offset = 0; offset < ids.length; offset += 200) {
     const actionIds = ids.slice(offset, offset + 200);
     const { data: rows, error } = await supabase.from("actions")
-      .select("id,title,action_type,status,deadline_status,deadline_date,deadline_at,deadline_source_id")
+      .select("id,title,action_type,status,deadline_status,deadline_date,deadline_at,deadline_source_id,requirements,conditions,start_date,start_at,completed_at")
       .eq("user_id", user.id).in("id", actionIds).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(200);
     if (error || !rows) throw new ItemReadError();
     actions.push(...rows.map((row) => ({
       id: row.id, title: row.title, type: row.action_type, status: row.status,
       deadlineStatus: row.deadline_status, deadlineDate: row.deadline_date, deadlineAt: row.deadline_at, deadlineSourceId: row.deadline_source_id,
+      requirements: row.requirements, conditions: row.conditions, startDate: row.start_date, startAt: row.start_at, completedAt: row.completed_at,
     })));
     // Read ALL sources for each Action, including other ITEMs and historical evidence.
     const sources = await readRelatedPages((after) => {
       let query = supabase.from("action_sources")
-        .select("id,action_id,item_id,evidence_text,evidence_locator,is_current,observed_at")
+        .select("id,action_id,item_id,evidence_text,evidence_locator,is_current,observed_at,observed_deadline_date,observed_deadline_at")
         .eq("user_id", user.id).in("action_id", actionIds).order("id", { ascending: true }).limit(relatedPageSize);
       if (after) query = query.gt("id", after);
       return query;
     });
     evidence.push(...sources.map((row) => ({
       id: row.id, actionId: row.action_id, itemId: row.item_id, text: row.evidence_text,
-      locator: row.evidence_locator, isCurrent: row.is_current, observedAt: row.observed_at,
+      locator: safeEvidenceLocator(row.evidence_locator), isCurrent: row.is_current, observedAt: row.observed_at,
+      observedDeadlineDate: row.observed_deadline_date, observedDeadlineAt: row.observed_deadline_at,
     })));
   }
   evidence.sort((left, right) => right.observedAt.localeCompare(left.observedAt) || right.id.localeCompare(left.id));
   const google = ["gmail", "drive", "calendar"].includes(item.source);
   const metadata = typeof item.metadata === "object" && item.metadata !== null && !Array.isArray(item.metadata) ? item.metadata : {};
   const mailHeader = (name: string) => typeof metadata[name] === "string" ? metadata[name] as string : "";
+  const effective = effectiveClassification(classification);
   return {
     item: { id: item.id, title: item.title, source: item.source, format: item.format, processingStatus: item.processing_status, createdAt: item.created_at, updatedAt: item.updated_at, contentText: item.content_text, sourceCreatedAt: item.source_created_at },
     gmail: item.source === "gmail" ? { from: mailHeader("from"), to: mailHeader("to"), cc: mailHeader("cc"), bcc: mailHeader("bcc"), dateHeader: mailHeader("date") } : null,
-    classification: effectiveClassification(classification), actions, evidence,
+    classification: effective, effectiveClassification: effective,
+    aiClassification: classification ? { primaryTopic: classification.ai_primary_topic,
+      documentType: classification.ai_document_type, tags: classification.ai_tags } : null,
+    userClassification: classification && effective.origin === "user" ? { primaryTopic: classification.user_primary_topic,
+      documentType: classification.user_document_type, tags: classification.user_tags } : null,
+    actions, evidence, ...storedAnalysis(item.metadata, item.content_text),
     processing: { status: item.processing_status },
     original: { url: google ? safeOriginalUrl(item.original_url) : null, previewType: google ? "google" as const : item.source === "upload" ? "upload" as const : "text" as const },
   };

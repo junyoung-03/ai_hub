@@ -476,6 +476,18 @@ export type Database = {
           token_expires_at: string
         }[]
       }
+      persist_gmail_item_analysis: {
+        Args: {
+          p_analysis: Json
+          p_content_hash: string
+          p_content_text: string
+          p_input_fingerprint: string
+          p_item_id: string
+          p_model: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       refresh_google_connection_tokens: {
         Args: {
           p_access_token_ciphertext: string

@@ -616,6 +616,18 @@ v1은 아래 조건을 충족하면 완료로 판단합니다.
 
 ---
 
+## Phase 6A 구현 범위
+
+저장된 Gmail ITEM 분석용 서버 API `POST /api/v1/items/{itemId}/analyze`를 제공한다.
+Gemini 출력은 루트 `AI_OUTPUT_SCHEMA.json` v0.2로 검증하며, 행사일은 Action과 독립된
+`eventObservations`로 `items.metadata.aiAnalysis`에 보존한다. 분석 저장은 서버 전용 RPC의
+단일 transaction이며 사용자 분류 override를 유지한다. 검색/Embedding/Phase 6B는 구현하지 않는다.
+실행 검증 결과와 미완료 항목은 작업 보고를 기준으로 판단하며, 구현 존재를 실검증 완료로 간주하지 않는다.
+현재 실제 최대 5건 검증은 Gemini 503/429와 출력 검증 거부로 미완료다. Phase 6A 완료로 표시하지 않는다.
+검증 명령은 `scripts/README.md`, 개발 DB 이력은 `supabase/README.md`를 참고한다.
+
+서버 환경변수 `GEMINI_API_KEY`, `GEMINI_MODEL`은 `.env.local`에 설정한다. 값은 Git에 저장하지 않는다.
+
 ## License
 
 라이선스 정책은 추후 확정합니다.

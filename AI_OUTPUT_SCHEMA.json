@@ -1,12 +1,12 @@
 {
   "type": "object",
-  "title": "AIHubItemAnalysisV01",
-  "description": "AI 통합 정보 허브의 단일 ITEM 분석 결과. AI는 후보와 관찰값만 반환하며 최종 DB 권한·소유권·중복병합·Action Deadline 확정은 서버가 수행한다.",
+  "title": "AIHubItemAnalysisV02",
+  "description": "승인된 Phase 6A ITEM 분석 구조. Classification, Action 후보와 독립된 행사 관찰값을 반환한다.",
   "properties": {
     "schemaVersion": {
       "type": "string",
       "enum": [
-        "0.1"
+        "0.2"
       ],
       "description": "Structured Output schema version."
     },
@@ -407,12 +407,130 @@
         ],
         "additionalProperties": false
       }
+    },
+    "eventObservations": {
+      "type": "array",
+      "maxItems": 10,
+      "description": "ITEM 수준 행사/일정 관찰값. 정보가 없으면 빈 배열. 행사일만으로 Action을 만들지 않는다.",
+      "items": {
+        "type": "object",
+        "description": "이 ITEM의 행사/일정 시점 관찰값. Action 또는 신청 시작일/마감일이 아니다. 날짜 추정 금지.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "needs_review"
+            ]
+          },
+          "date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "원문에 명확히 확인되는 YYYY-MM-DD. 추측하지 않는다."
+          },
+          "datetime": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "원문에 날짜와 시간이 모두 명확한 경우만 반환. 시간대도 근거 없이 추정하지 않는다."
+          },
+          "rawText": {
+            "type": "string",
+            "description": "원문에 직접 나타나는 행사/일정 날짜 표현. 반드시 원문 Evidence 안에 존재해야 한다.",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "시작 시점을 직접 뒷받침하는 원문 근거."
+              },
+              "locator": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "text_span",
+                      "page",
+                      "email_section",
+                      "calendar_field",
+                      "metadata",
+                      "unknown"
+                    ]
+                  },
+                  "page": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "section": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "startChar": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "endChar": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "field": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "page",
+                  "section",
+                  "startChar",
+                  "endChar",
+                  "field"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "text",
+              "locator"
+            ],
+            "additionalProperties": false,
+            "description": "행사/일정 시점의 정확한 원문 Evidence. 각 행사 관찰값에는 반드시 근거가 필요하다."
+          }
+        },
+        "required": [
+          "status",
+          "date",
+          "datetime",
+          "rawText",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
     "schemaVersion",
     "classification",
-    "actions"
+    "actions",
+    "eventObservations"
   ],
   "additionalProperties": false
 }

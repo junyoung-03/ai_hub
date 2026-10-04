@@ -1,6 +1,6 @@
 # AI_OUTPUT_SPEC.md
 
-# AI 통합 정보 허브 — AI Structured Output 명세 v0.1
+# AI 통합 정보 허브 — AI Structured Output 명세 v0.2
 
 > 기준: 서비스 기획 및 개발 기준서 v0.5 + DB Migration v0.5 + API_SPEC v0.1  
 > 목적: Gemini가 비정형 ITEM을 분석한 뒤 서버가 안전하게 검증·저장할 수 있는 후보 JSON을 생성한다.
@@ -39,13 +39,14 @@ AI가 최종 결정하지 않는 것:
 
 ```json
 {
-  "schemaVersion": "0.1",
+  "schemaVersion": "0.2",
   "classification": {
     "primaryTopic": "등록금",
     "documentType": "billing",
     "tags": ["학교", "납부"]
   },
-  "actions": []
+  "actions": [],
+  "eventObservations": []
 }
 ```
 
@@ -54,6 +55,7 @@ AI가 최종 결정하지 않는 것:
 - `schemaVersion`
 - `classification`
 - `actions`
+- `eventObservations`
 
 Action이 없으면 `actions`는 반드시 빈 배열이다.
 
@@ -488,7 +490,7 @@ DB 저장 금지
 
 현재 Gemini Structured Output은 JSON Schema 기반 출력을 지원한다.
 
-구현 시 최신 Interactions API 방식의 개념은 다음과 같다.
+Interactions API의 개념 예시는 다음과 같다. Phase 6A 실제 구현은 아래 18절의 Generate Content REST 경계를 사용한다.
 
 ```text
 response_format
@@ -522,7 +524,40 @@ Database = Enforced Integrity
 ✅ DB Migration
 ✅ DB Optimization
 ✅ API_SPEC v0.1
-✅ AI Structured Output v0.1
+✅ AI Structured Output v0.2
 
 → 다음: 실제 구현
 ```
+
+
+## 18. 승인된 Phase 6A 확장 (2026-10-04)
+
+- schemaVersion은 "0.2"다. v0.1 출력은 이 처리 경계에서 거부한다.
+- ITEM 수준 eventObservations는 필수 배열이며 최대 10개다. 정보가 없으면 []다. Action이 없어도 행사 관찰값을 보존한다.
+- 항목은 status(confirmed/needs_review), date, datetime, rawText, evidence다. confirmed는 명확한 원문 날짜와 근거가 필수이고 needs_review는 date/datetime=null이다.
+- rawText는 Evidence 안의 정확한 부분 문자열이며 Evidence는 content_text의 정확한 인용이어야 한다. 연도/시간대/상대 날짜를 추측하지 않는다.
+- 행사일은 actions.deadline_date나 start_date로 자동 복사하지 않는다. 실제 신청 시작/마감의 별도 근거가 있어야 한다.
+- description은 추가하지 않는다. title/requirements/conditions/본문/Evidence를 사용한다.
+
+### DB 저장 및 권한
+
+classifications/actions/action_sources 테이블 구조는 유지한다. 기존 upsert_ai_classification()으로 ai_*만 갱신하고 user_*를 보호한다.
+
+items.metadata.aiAnalysis에는 schemaVersion, model, inputFingerprint, analyzedAt, result를 저장한다. result는 검증된 전체 v0.2 출력이며 eventObservations를 포함한다. 기존 Gmail metadata를 병합 보존한다.
+
+Action의 대표 인용은 action_sources.evidence_text에, Source의 모든 검증된 인용과 시작/마감 근거는 evidence_locator JSON에 저장한다. 인용 위치는 content_text의 Unicode code point 오프셋(0-based, end exclusive)으로 서버에서 검증/계산한다. confirmed는 같은 Action의 current Source를 선택한다. 출처 충돌 시 needs_review로 두고 임의 선택하지 않는다.
+
+Classification + Action + Evidence + ITEM 분석 metadata 저장은 승인된 service_role 전용 RPC의 단일 transaction에서 수행한다. SECURITY DEFINER / search_path='' / 명시적 EXECUTE 제한을 사용한다. 로그인 사용자 확인은 서버 requireUser(), 모든 DB 소유권은 서버에서 정한 user_id로 제한한다. 실패 시 전체 rollback한다.
+
+### 재분석
+
+동일 ITEM/원문 fingerprint/schemaVersion/model의 검증된 결과는 재사용한다. 재저장해도 동일 Action/current Evidence를 재사용하고 내용 변경이 있을 때만 Source history를 추가한다. 기존 Action 완료 상태를 바꾸지 않는다. 표현 변경/삭제 후보의 매칭이 모호하면 자동 추가/삭제하지 않고 검토 오류로 처리한다. Cross-ITEM 의미 매칭은 별도 정의 전 임의 구현하지 않는다.
+
+원문 스냅샷이 바뀌면 오래된 출력 저장을 거부한다. Schema/의미/Evidence 검증 실패 시 결과 저장 금지, 안전한 failed 상태만 기록한다. Phase 6A 성공은 indexing 대기 상태다. Search Chunk/Embedding 미실행 상태를 completed로 표시하지 않는다.
+
+Gemini 호출은 서버 전용 GEMINI_API_KEY와 명시적인 GEMINI_MODEL을 사용한다. 공식 Generate Content REST Structured Output을 사용하며 SDK 추가 없이 처리한다. 실제 검증은 저장된 Gmail ITEM 최대 5개로 제한하고 이메일 원문/개인정보/Secret/Token을 보고하지 않는다.
+
+사용자 요청에 따라 429/503만 최대 3회 시도(최초 1회 + 재시도 2회)한다. 전체 호출 제한은 120초다.
+Retry-After를 존중하되 10초를 초과하는 대기는 요청 안에서 수행하지 않고 실패로 반환한다.
+출력 검증 오류/다른 HTTP 오류/네트워크 불명확 실패는 자동 재시도하지 않는다. 모델은 자동 변경하지 않는다.
+실제 검증 스크립트는 재시도 소진 시 batch를 중단하고 PARTIAL로 보고한다.

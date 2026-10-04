@@ -9,6 +9,12 @@
 | 1 | `../0001_initial_schema (4).sql` | v0.5 REVIEW | `20261003103041` | `initial_schema_v05` | remote only |
 | 2 | `../0002_db_optimization.sql` | v0.1 | `20261003104321` | `db_optimization_v01` | remote only |
 | 3 | `migrations/20261004045936_google_data_oauth_token_storage.sql` | Phase 4 수정본 | `20261004045936` | `google_data_oauth_token_storage` | local/remote 일치 |
+| 4 | `migrations/20261004115419_persist_gmail_item_analysis.sql` | 승인된 Phase 6A RPC | `20261004115419` | `persist_gmail_item_analysis` | dev 적용 및 history 등록 |
+
+Phase 6A 순서 4는 기존 테이블·Evidence trigger·AI 분류 RPC에 의존하며 테이블 구조는 변경하지 않는다.
+승인 후 ai-hub-dev에 해당 SQL만 실행했고 해당 version만 applied history로 등록했다.
+`SECURITY DEFINER`, 빈 search_path, service_role 전용 EXECUTE이며 실제 권한과 합성 transaction/rollback 검사를 수행했다.
+이 단계에서 기존 SQL 및 다른 migration history는 변경하지 않았다.
 
 초기 Schema → Optimization → Token Storage 순서로 의존한다. 순서 3은 기존 `public.connections` 등 초기 테이블에 의존한다. 루트 SQL 두 파일은 CLI가 자동 발견하는 `supabase/migrations` 파일이 아니다.
 

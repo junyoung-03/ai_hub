@@ -9,9 +9,11 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:isolated",
-    "test:isolated": "node --test scripts/test-auth.mjs scripts/test-items.mjs scripts/test-gmail.mjs scripts/test-google-connections.mjs",
+    "test:isolated": "node --test scripts/test-auth.mjs scripts/test-items.mjs scripts/test-gmail.mjs scripts/test-google-connections.mjs scripts/test-analysis.mjs",
     "check:supabase": "node scripts/check-supabase.mjs",
-    "test:live:google-refresh": "node scripts/test-gmail-refresh-live.mjs"
+    "test:live:google-refresh": "node scripts/test-gmail-refresh-live.mjs",
+    "test:live:analysis": "node scripts/test-analysis-live.mjs",
+    "test:live:analysis-db": "node scripts/test-analysis-db.mjs"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -19,6 +21,8 @@
   "dependencies": {
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",
     "lucide-react": "1.49.0",

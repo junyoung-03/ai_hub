@@ -7,6 +7,7 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { createClient } from "@supabase/supabase-js";
+import { loadAnalysisModule } from "./analysis-loader.mjs";
 
 const require = createRequire(import.meta.url);
 function load(path, dependencies = {}) {
@@ -29,6 +30,8 @@ function load(path, dependencies = {}) {
 const database = load("src/types/database.ts");
 const filters = load("src/lib/items/filters.ts", { "@/types/database": database });
 const presentation = load("src/lib/items/presentation.ts");
+// Local v0.2 validation only. Importing a Gemini client would fail this harness.
+const validation = loadAnalysisModule("src/lib/gemini/validation.ts");
 const classify = {
   ai_primary_topic: "AI Topic", user_primary_topic: null, ai_document_type: "notice", user_document_type: null,
   ai_tags: ["AI tag"], user_tags: null,
@@ -59,6 +62,7 @@ function queries(responses, authorized = true) {
   const queryModule = load("src/lib/items/queries.ts", {
     "@/lib/supabase/auth": auth, "@/lib/supabase/server": { async createClient() { return client; } },
     "@/lib/items/filters": filters, "@/lib/items/presentation": presentation,
+    "@/lib/gemini/validation": validation,
   });
   return { queryModule, calls, auth, checks: () => authChecks };
 }
@@ -224,4 +228,170 @@ test("GET API returns private no-store 401/400/404/500 envelopes without interna
     "@/lib/items/queries": { async listItems() { assert.fail("Anonymous must not read DB"); } },
   });
   assert.equal((await route.GET(new Request("http://localhost/api/v1/items?user_id=other"))).status, 401);
+});
+
+const detailItem = {
+  id, title: "Synthetic subject", source: "gmail", format: "email", processing_status: "indexing",
+  created_at: time, updated_at: time, source_created_at: time, content_text: "행사일은 2026-10-20입니다.", original_url: null,
+};
+const detailAction = {
+  id: actionId, title: "신청하세요", action_type: "optional", status: "completed",
+  deadline_status: "confirmed", deadline_date: "2026-10-15", deadline_at: "2026-10-15T18:00:00+09:00",
+  deadline_source_id: "source-fixture", requirements: ["신청서"], conditions: ["대상자"],
+  start_date: "2026-10-05", start_at: null, completed_at: time,
+};
+const eventQuote = {
+  text: detailItem.content_text,
+  locator: { kind: "text_span", page: null, section: null, startChar: 0,
+    endChar: Array.from(detailItem.content_text).length, field: "content_text" },
+};
+const artifact = {
+  schemaVersion: "0.2", analyzedAt: time, model: "private-model-marker", inputFingerprint: "private-fingerprint-marker",
+  result: { schemaVersion: "0.2", classification: { primaryTopic: "행사", documentType: "schedule", tags: [] },
+    actions: [], eventObservations: [{ status: "confirmed", date: "2026-10-20", datetime: null,
+      rawText: "2026-10-20", evidence: eventQuote }] },
+};
+function detailResponses(item = detailItem, classification = classify, action = null, sources = []) {
+  return [{ data: item }, { data: classification }, { data: action ? [{ id: "source-fixture", action_id: action.id }] : [] },
+    ...(action ? [{ data: [action] }, { data: sources }] : [])];
+}
+
+test("Detail GET serializes the approved contract, with AI/User/Effective values and legacy fields", async () => {
+  const edited = { ...classify, user_primary_topic: "User Topic", user_document_type: null, user_tags: [] };
+  const { queryModule, calls } = queries(detailResponses(detailItem, edited, detailAction));
+  const http = load("src/lib/items/http.ts", { "@/lib/supabase/auth": { AuthenticationRequiredError: class extends Error {} }, "@/lib/items/filters": filters });
+  const route = load("src/app/api/v1/items/[itemId]/route.ts", { "@/lib/items/http": http, "@/lib/items/queries": queryModule });
+  const response = await route.GET(new Request(`http://localhost/api/v1/items/${id}`), { params: Promise.resolve({ itemId: id }) });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("cache-control"), /private, no-store/);
+  const result = await response.json();
+  for (const field of ["item", "classification", "actions", "evidence", "processing", "gmail", "original",
+    "aiClassification", "userClassification", "effectiveClassification", "eventObservations", "aiAnalysis"]) assert.ok(Object.hasOwn(result, field), field);
+  assert.deepEqual(result.aiClassification, { primaryTopic: "AI Topic", documentType: "notice", tags: ["AI tag"] });
+  assert.deepEqual(result.userClassification, { primaryTopic: "User Topic", documentType: null, tags: [] });
+  assert.deepEqual(result.classification, result.effectiveClassification);
+  assert.equal(result.effectiveClassification.primaryTopic, "User Topic");
+  assert.equal(result.effectiveClassification.documentType, "notice");
+  assert.deepEqual(result.effectiveClassification.tags, []);
+  assert.deepEqual(result.effectiveClassification.origins, { primaryTopic: "user", documentType: "ai", tags: "user" });
+  const action = result.actions[0];
+  assert.deepEqual(action.requirements, ["신청서"]);
+  assert.deepEqual(action.conditions, ["대상자"]);
+  assert.equal(action.startDate, "2026-10-05");
+  assert.equal(action.startAt, null);
+  assert.equal(action.deadlineDate, "2026-10-15");
+  assert.equal(action.deadlineAt, "2026-10-15T18:00:00+09:00");
+  assert.equal(action.deadlineStatus, "confirmed");
+  assert.equal(action.deadlineSourceId, "source-fixture");
+  assert.equal(action.status, "completed");
+  assert.equal(action.completedAt, time);
+  assert.equal(result.item.processingStatus, "indexing");
+  assert.equal(result.processing.status, "indexing");
+  assert.equal(result.aiAnalysis, null);
+  for (const call of calls) assert.equal(call.searchParams.get("user_id"), "eq.owner-fixture");
+  assert.ok(calls[3].searchParams.get("select").includes("requirements,conditions,start_date,start_at,completed_at"));
+});
+
+test("unanalysed and AI-only ITEMs return safe empty states without creating Actions or overrides", async () => {
+  for (const classification of [null, classify]) {
+    const { queryModule } = queries(detailResponses({ ...detailItem, processing_status: "queued" }, classification));
+    const result = plain(await queryModule.getItemDetail(id));
+    assert.equal(result.userClassification, null);
+    assert.equal(result.aiClassification === null, classification === null);
+    assert.equal(result.effectiveClassification.available, classification !== null);
+    assert.deepEqual(result.actions, []);
+    assert.deepEqual(result.evidence, []);
+    assert.deepEqual(result.eventObservations, []);
+    assert.equal(result.aiAnalysis, null);
+    assert.equal(result.processing.status, "queued");
+  }
+});
+
+test("v0.2 event-only analysis exposes a safe summary and event Evidence without changing Action deadlines", async () => {
+  for (const action of [null, detailAction]) {
+    const { queryModule } = queries(detailResponses({ ...detailItem, metadata: { aiAnalysis: artifact, token: "private-token-marker" } }, classify, action));
+    const result = plain(await queryModule.getItemDetail(id));
+    assert.deepEqual(result.aiAnalysis, { schemaVersion: "0.2", analyzedAt: time });
+    assert.equal(result.eventObservations.length, 1);
+    assert.equal(result.eventObservations[0].date, "2026-10-20");
+    assert.deepEqual(result.eventObservations[0].evidence, eventQuote);
+    assert.equal(result.actions.length, action ? 1 : 0);
+    if (action) {
+      assert.equal(result.actions[0].startDate, "2026-10-05");
+      assert.equal(result.actions[0].deadlineDate, "2026-10-15");
+    }
+    assert.equal(result.aiClassification.primaryTopic, "AI Topic", "Stored DB classification wins over artifact candidate");
+    const serialized = JSON.stringify(result);
+    for (const marker of ["private-token-marker", "private-model-marker", "private-fingerprint-marker"]) assert.ok(!serialized.includes(marker));
+    assert.ok(!Object.hasOwn(result.item, "metadata"));
+    assert.equal(result.processing.status, "indexing");
+  }
+});
+
+test("needs_review events remain undated; valid empty analysis is distinguishable from missing analysis", async () => {
+  for (const events of [[], [{ status: "needs_review", date: null, datetime: null, rawText: "2026-10-20", evidence: eventQuote }]]) {
+    const stored = { ...artifact, result: { ...artifact.result, eventObservations: events } };
+    const { queryModule } = queries(detailResponses({ ...detailItem, metadata: { aiAnalysis: stored } }));
+    const result = plain(await queryModule.getItemDetail(id));
+    assert.deepEqual(result.aiAnalysis, { schemaVersion: "0.2", analyzedAt: time });
+    assert.deepEqual(result.eventObservations, events);
+    assert.deepEqual(result.actions, []);
+  }
+});
+
+test("missing/malformed/obsolete/stale AI artifacts fail safely without failing Detail", async () => {
+  const malformed = [null, [], "bad", {}, { ...artifact, schemaVersion: "0.1" },
+    { ...artifact, analyzedAt: "not-a-time" }, { ...artifact, result: {} },
+    { ...artifact, result: { ...artifact.result, schemaVersion: "0.1" } },
+    { ...artifact, result: { ...artifact.result, eventObservations: "bad" } },
+    { ...artifact, result: { ...artifact.result, eventObservations: [{ ...artifact.result.eventObservations[0], evidence: null }] } },
+    { ...artifact, result: { ...artifact.result, eventObservations: [{ ...artifact.result.eventObservations[0], rawText: "추론된 날짜" }] } },
+    { ...artifact, result: { ...artifact.result, arbitrary: "private-nested-marker" } },
+  ];
+  for (const stored of malformed) {
+    const { queryModule } = queries(detailResponses({ ...detailItem, metadata: { aiAnalysis: stored } }, classify, detailAction));
+    const result = plain(await queryModule.getItemDetail(id));
+    assert.equal(result.aiAnalysis, null);
+    assert.deepEqual(result.eventObservations, []);
+    assert.equal(result.actions[0].id, actionId);
+    assert.equal(result.classification.primaryTopic, "AI Topic");
+    assert.ok(!JSON.stringify(result).includes("private-nested-marker"));
+  }
+  const { queryModule } = queries(detailResponses({ ...detailItem, content_text: "Changed source", metadata: { aiAnalysis: artifact } }));
+  assert.equal((await queryModule.getItemDetail(id)).aiAnalysis, null);
+});
+
+test("Evidence maps observed deadlines and recursively whitelists persisted locator keys including history", async () => {
+  const quote = { ...eventQuote, token: "nested-secret-marker", locator: { ...eventQuote.locator, analysisKey: "nested-key-marker" } };
+  const observation = { status: "confirmed", date: "2026-10-20", datetime: null, rawText: "2026-10-20", evidence: quote, arbitrary: "nested-secret-marker" };
+  const source = {
+    id: "source-fixture", action_id: actionId, item_id: id, evidence_text: eventQuote.text,
+    evidence_locator: { ...eventQuote.locator, schemaVersion: "0.2", analysisKey: "internal-key-marker",
+      token: "outer-secret-marker", evidence: [quote], startObservation: observation,
+      deadlineObservation: { status: "none", date: null, datetime: null, rawText: null, evidence: null, token: "nested-secret-marker" } },
+    is_current: true, observed_at: time, observed_deadline_date: "2026-10-15", observed_deadline_at: null,
+  };
+  const { queryModule, calls } = queries(detailResponses(detailItem, classify, detailAction, [source,
+    { ...source, id: "history-fixture", item_id: otherItemId, is_current: false, evidence_locator: { page: 1, private: "outer-secret-marker" } }]));
+  const result = plain(await queryModule.getItemDetail(id));
+  const current = result.evidence.find((row) => row.isCurrent);
+  assert.equal(current.text, eventQuote.text);
+  assert.equal(current.observedDeadlineDate, "2026-10-15");
+  assert.equal(current.observedDeadlineAt, null);
+  assert.deepEqual(current.locator.evidence, [eventQuote]);
+  assert.deepEqual(current.locator.startObservation, { status: "confirmed", date: "2026-10-20", datetime: null,
+    rawText: "2026-10-20", evidence: eventQuote });
+  assert.deepEqual(current.locator.deadlineObservation, { status: "none", date: null, datetime: null, rawText: null, evidence: null });
+  assert.equal(result.evidence.length, 2);
+  assert.deepEqual(result.evidence.find((row) => !row.isCurrent).locator, { page: 1 });
+  for (const marker of ["nested-secret-marker", "nested-key-marker", "internal-key-marker", "outer-secret-marker"]) assert.ok(!JSON.stringify(result).includes(marker));
+  assert.equal(calls.at(-1).searchParams.get("user_id"), "eq.owner-fixture");
+});
+
+test("malformed locator values are omitted without exposing arbitrary JSON", () => {
+  for (const input of [null, [], "bad", { private: { token: "marker" } }]) assert.deepEqual(plain(presentation.safeEvidenceLocator(input)), {});
+  const result = plain(presentation.safeEvidenceLocator({ schemaVersion: "0.2", kind: "invalid", page: -1, startChar: "marker",
+    evidence: [{ text: "invented", locator: {} }], startObservation: { status: "confirmed", date: "2026-02-30" },
+    deadlineObservation: { status: "none", date: "2026-10-20", datetime: null, rawText: null, evidence: null } }));
+  assert.deepEqual(result, { schemaVersion: "0.2", evidence: [] });
 });
