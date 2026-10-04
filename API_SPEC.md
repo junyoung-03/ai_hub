@@ -1,0 +1,922 @@
+# API_SPEC.md
+
+# AI 통합 정보 허브 API 명세 v0.1
+
+> 기준 문서: 「AI 통합 정보 허브 — 서비스 기획 및 개발 기준서 v0.5」  
+> 개발 순서: Wireframe → DB Migration → API 명세 → AI Structured Output → 구현  
+> 기술 스택: Next.js + TypeScript + Supabase + Google API + Gemini + Cloud Run
+
+---
+
+## 1. 목적
+
+본 문서는 AI 통합 정보 허브 v1의 Application API와 Internal API를 정의한다.
+
+v1의 핵심 범위는 다음 3가지다.
+
+- COLLECT: Gmail · Google Drive · Google Calendar 자동수집 + PDF · 이미지 · 스크린샷 · 문서 · 텍스트 직접입력
+- FIND: AI 자동분류 + 자연어 통합검색 + Source / Evidence
+- ACT: Action 추출 + Deadline / D-Day 관리
+
+v1에서 다음 기능은 제외한다.
+
+- SMS · 카카오톡 자동수집
+- 네이버메일 · Outlook 자동연동
+- Google Drive 실제 폴더 자동이동
+- 자동 신청 · 제출 · 결제
+- 복잡한 Life Graph
+- 네이티브 모바일 앱
+
+---
+
+## 2. API 기본 구조
+
+### 2.1 Public Application API
+
+```text
+/api/v1/*
+```
+
+브라우저에서 호출하는 모든 업무 API는 Next.js Application API를 거친다.
+
+```text
+Browser
+  ↓
+Next.js Application API
+  ↓
+인증 / 권한 / 입력 검증
+  ↓
+Supabase / Google / Worker
+```
+
+### 2.2 Internal API
+
+```text
+/api/internal/v1/*
+```
+
+Cloud Run Worker, Pub/Sub, 서버 내부 작업에서만 사용한다.
+
+브라우저에서 직접 호출할 수 없다.
+
+---
+
+## 3. 공통 보안 원칙
+
+1. 클라이언트 요청에서 `user_id`를 받지 않는다.
+2. `user_id`는 Supabase Auth 세션에서 서버가 확정한다.
+3. Service Role / Secret Key는 브라우저에 노출하지 않는다.
+4. Google OAuth Token은 브라우저에 노출하지 않는다.
+5. Browser에서 DB의 SECURITY DEFINER RPC를 직접 호출하지 않는다.
+6. 모든 변경 요청은 Application API를 통해 수행한다.
+7. 타 사용자 리소스는 존재 여부를 노출하지 않고 `404` 또는 `403`으로 처리한다.
+8. PostgreSQL 내부 오류와 Stack Trace를 사용자에게 직접 노출하지 않는다.
+
+---
+
+## 4. 공통 HTTP 규칙
+
+| HTTP Status | 의미 |
+|---|---|
+| 200 | 정상 조회 / 수정 |
+| 201 | 리소스 생성 |
+| 202 | 비동기 작업 접수 |
+| 204 | 정상 처리, 응답 본문 없음 |
+| 400 | 요청 형식 오류 |
+| 401 | 인증 필요 |
+| 403 | 권한 없음 |
+| 404 | 리소스 없음 또는 접근 불가 |
+| 409 | 중복 / 상태 충돌 |
+| 422 | 업무 규칙 위반 |
+| 429 | Rate Limit |
+| 500 | 서버 내부 오류 |
+| 503 | 외부 서비스 일시 장애 |
+
+---
+
+## 5. 공통 Error Response
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "요청값이 올바르지 않습니다.",
+    "details": {},
+    "requestId": "uuid"
+  }
+}
+```
+
+### 5.1 기본 Error Code
+
+```text
+UNAUTHORIZED
+FORBIDDEN
+NOT_FOUND
+VALIDATION_ERROR
+CONFLICT
+PROCESSING_FAILED
+RATE_LIMITED
+EXTERNAL_SERVICE_ERROR
+INTERNAL_ERROR
+```
+
+---
+
+# 6. CONNECTIONS / GOOGLE OAUTH
+
+## 6.1 Google 연결 상태 조회
+
+### GET `/api/v1/connections`
+
+Response:
+
+```json
+{
+  "google": {
+    "status": "connected",
+    "accountEmail": "user@example.com",
+    "lastSyncedAt": "2026-10-03T10:00:00Z"
+  }
+}
+```
+
+---
+
+## 6.2 Google OAuth 시작
+
+### POST `/api/v1/connections/google/authorize`
+
+Response:
+
+```json
+{
+  "authorizationUrl": "https://accounts.google.com/..."
+}
+```
+
+서버는 OAuth `state`를 생성하고 검증한다.
+
+---
+
+## 6.3 Google OAuth Callback
+
+### GET `/api/v1/connections/google/callback`
+
+처리 순서:
+
+```text
+Authorization Code 검증
+→ 사용자 확인
+→ Google Provider Account ID 확인
+→ 기존 connection 검색
+→ 기존 connection 재사용 또는 신규 생성
+→ status = connected
+→ Token 안전 저장
+→ 최초 Sync 작업 등록
+```
+
+최초 동기화 전체를 Callback 요청 안에서 수행하지 않는다.
+
+---
+
+## 6.4 Google 연결 해제
+
+### POST `/api/v1/connections/google/disconnect`
+
+처리:
+
+```text
+신규 동기화 중단
+기존 분석 데이터 유지
+기존 검색 데이터 유지
+기존 Action / D-Day 유지
+Google 원본 데이터 유지
+```
+
+재연결 시 기존 Google Account Identity를 기준으로 기존 connection 재사용을 우선한다.
+
+---
+
+# 7. UPLOAD / 직접 입력
+
+## 7.1 업로드 구조
+
+파일 원본은 Next.js 서버를 통째로 경유하지 않는다.
+
+```text
+Browser
+→ Upload Session 요청
+→ Next.js
+→ Signed Upload 정보 발급
+→ Browser
+→ Supabase Storage 직접 업로드
+→ Complete API
+→ ITEM 생성
+→ AI Pipeline Queue
+```
+
+---
+
+## 7.2 Upload Session 생성
+
+### POST `/api/v1/uploads`
+
+Request:
+
+```json
+{
+  "fileName": "등록금안내.pdf",
+  "mimeType": "application/pdf",
+  "size": 2459103
+}
+```
+
+Response:
+
+```json
+{
+  "uploadId": "uuid",
+  "storagePath": "user-id/uuid/등록금안내.pdf",
+  "signedUploadUrl": "...",
+  "expiresAt": "..."
+}
+```
+
+서버 검증:
+
+- 허용 MIME Type
+- 최대 파일 크기
+- 파일명 정규화
+- 사용자별 Storage Path
+- Upload Session 유효기간
+
+---
+
+## 7.3 Upload 완료
+
+### POST `/api/v1/uploads/{uploadId}/complete`
+
+Response: `202 Accepted`
+
+```json
+{
+  "item": {
+    "id": "uuid",
+    "source": "upload",
+    "format": "pdf",
+    "processingStatus": "queued"
+  }
+}
+```
+
+---
+
+## 7.4 Text 직접입력
+
+### POST `/api/v1/items/text`
+
+Request:
+
+```json
+{
+  "title": "학교 등록금 안내 메모",
+  "text": "등록금 납부 기간은..."
+}
+```
+
+처리:
+
+```text
+source = manual
+format = text
+processing_status = queued
+```
+
+Response: `202 Accepted`
+
+---
+
+# 8. ITEM / LIBRARY
+
+## 8.1 ITEM 목록
+
+### GET `/api/v1/items`
+
+Query Parameters:
+
+```text
+source
+format
+topic
+documentType
+processingStatus
+from
+to
+cursor
+limit
+```
+
+예:
+
+```text
+GET /api/v1/items?source=gmail&topic=등록금&limit=30
+```
+
+기본 `limit = 30`.
+
+Pagination은 Offset보다 Cursor 방식을 기본으로 한다.
+
+Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "source": "gmail",
+      "format": "email",
+      "title": "2026학년도 등록금 납부 안내",
+      "processingStatus": "completed",
+      "classification": {
+        "primaryTopic": "등록금",
+        "documentType": "billing",
+        "tags": ["학교", "납부"],
+        "origin": "ai"
+      },
+      "createdAt": "2026-10-03T10:00:00Z"
+    }
+  ],
+  "nextCursor": "..."
+}
+```
+
+---
+
+## 8.2 ITEM 상세
+
+### GET `/api/v1/items/{itemId}`
+
+Response:
+
+```json
+{
+  "item": {},
+  "classification": {},
+  "actions": [],
+  "evidence": [],
+  "processing": {},
+  "original": {
+    "url": "...",
+    "previewType": "google"
+  }
+}
+```
+
+원본 접근:
+
+- Google Data → Google Original URL
+- Upload → 권한 검증 후 임시 접근 URL
+- Manual Text → 서비스 내부 표시
+
+---
+
+## 8.3 실패 ITEM 재처리
+
+### POST `/api/v1/items/{itemId}/retry`
+
+허용 조건:
+
+```text
+processing_status = failed
+```
+
+Response:
+
+```text
+202 Accepted
+```
+
+이미 작업 중이면:
+
+```text
+409 Conflict
+```
+
+---
+
+# 9. CLASSIFICATION OVERRIDE
+
+## 9.1 사용자 분류 수정
+
+### PATCH `/api/v1/items/{itemId}/classification`
+
+Request 예:
+
+```json
+{
+  "primaryTopic": "학비"
+}
+```
+
+PATCH 의미:
+
+| 입력 | 의미 |
+|---|---|
+| 필드 생략 | 기존 사용자 Override 유지 |
+| `"primaryTopic": null` | Topic Override 해제 |
+| `"documentType": null` | Document Type Override 해제 |
+| `"tags": null` | Tags Override 해제 |
+| `"tags": []` | 사용자가 Tag를 모두 제거 |
+
+예:
+
+```text
+AI Topic = 등록금
+User Topic = 학비
+AI 재분석 = 수업료
+Effective Topic = 학비
+```
+
+사용자가:
+
+```json
+{
+  "primaryTopic": null
+}
+```
+
+을 보내면:
+
+```text
+Effective Topic = 수업료
+```
+
+Application API는 PATCH 요청에 포함되지 않은 Override 값을 유지한다.
+
+---
+
+# 10. SEARCH
+
+## 10.1 통합 검색
+
+### POST `/api/v1/search`
+
+Request:
+
+```json
+{
+  "query": "이번 학기 학비 언제까지 내야 해?",
+  "filters": {
+    "source": [],
+    "format": [],
+    "topic": [],
+    "from": null,
+    "to": null
+  },
+  "limit": 20
+}
+```
+
+검색 처리:
+
+```text
+Query 분석
+→ Keyword Search
+→ Vector Search
+→ Metadata Search
+→ 결과 병합 / Ranking
+→ Top Relevant ITEM / Action
+→ Gemini Answer
+→ Answer + Source + Evidence
+```
+
+Response:
+
+```json
+{
+  "status": "answered",
+  "answer": "등록금 납부 마감일은 10월 31일입니다.",
+  "sources": [
+    {
+      "itemId": "uuid",
+      "title": "등록금 납부 안내",
+      "source": "gmail"
+    }
+  ],
+  "evidence": [
+    {
+      "itemId": "uuid",
+      "text": "등록금 납부 기간은 10월 21일부터 10월 31일까지입니다."
+    }
+  ],
+  "results": []
+}
+```
+
+근거 부족:
+
+```json
+{
+  "status": "insufficient_evidence",
+  "answer": null,
+  "message": "관련 자료에서 확정할 수 있는 정보를 찾지 못했습니다.",
+  "sources": [],
+  "evidence": []
+}
+```
+
+검색 결과는 추측하지 않는다.
+
+---
+
+# 11. ACTIONS
+
+## 11.1 Action 목록
+
+### GET `/api/v1/actions`
+
+Query:
+
+```text
+type=required|optional|check
+status=open|completed
+deadlineStatus=confirmed|needs_review|none
+cursor
+limit
+```
+
+UI 매핑:
+
+| UI | DB |
+|---|---|
+| 해야 할 일 | required |
+| 신청·선택 | optional |
+| 확인 필요 | check |
+
+---
+
+## 11.2 Action 상세
+
+### GET `/api/v1/actions/{actionId}`
+
+Response:
+
+```json
+{
+  "action": {},
+  "sources": [
+    {
+      "itemId": "uuid",
+      "evidenceText": "...",
+      "isCurrent": true,
+      "observedDeadlineDate": "2026-10-31"
+    }
+  ]
+}
+```
+
+Action은 최소 1개의 current Evidence를 유지한다.
+
+---
+
+## 11.3 Action 완료 상태 변경
+
+### PATCH `/api/v1/actions/{actionId}/status`
+
+Request:
+
+```json
+{
+  "status": "completed"
+}
+```
+
+규칙:
+
+```text
+completed → completed_at = now()
+open → completed_at = null
+```
+
+v1에서는 다음 사용자 수정 API를 제공하지 않는다.
+
+- Action 제목 직접 변경
+- Deadline 직접 변경
+- Evidence 직접 변경
+
+---
+
+# 12. DATA MANAGEMENT
+
+## 12.1 직접 업로드 ITEM 삭제
+
+### DELETE `/api/v1/data/uploads/{itemId}`
+
+삭제 대상:
+
+```text
+Storage 원본
+ITEM
+Classification
+Search Chunk
+관련 Action Evidence
+```
+
+Action의 마지막 current Evidence인 경우 DB 무결성 규칙을 위반하지 않도록 Application API에서 의존성을 먼저 처리한다.
+
+---
+
+## 12.2 Google 분석 데이터 삭제
+
+### DELETE `/api/v1/data/google-analysis`
+
+삭제 대상:
+
+```text
+Google Source ITEM
+Classification
+Search Chunk
+Action / Evidence
+서비스 분석 데이터
+```
+
+삭제하지 않는 것:
+
+```text
+Gmail 원본
+Google Drive 원본
+Google Calendar 원본
+```
+
+---
+
+## 12.3 서비스 전체 데이터 삭제
+
+### DELETE `/api/v1/data/all`
+
+Request 예:
+
+```json
+{
+  "confirmation": "DELETE_ALL_MY_DATA"
+}
+```
+
+서비스 전체 삭제는 재인증 또는 추가 확인 절차를 둔다.
+
+구체 방식은 Auth 구현 단계에서 확정한다.
+
+---
+
+# 13. INTERNAL API
+
+## 13.1 Google Sync 요청
+
+### POST `/api/internal/v1/sync/google`
+
+Request:
+
+```json
+{
+  "connectionId": "uuid",
+  "source": "gmail",
+  "mode": "incremental"
+}
+```
+
+브라우저 호출 금지.
+
+---
+
+### Implementation Phase 5 — POST `/api/v1/connections/google/sync`
+
+사용자 수동 초기 수집용 endpoint이며 위 internal incremental sync와 분리한다.
+Cookie 인증과 서버 `requireUser()`가 필요하고 same-origin POST만 허용한다.
+Request body, user_id, connection_id, query, limit을 클라이언트에서 받지 않는다.
+현재 로그인 사용자의 connected Google Connection만 사용한다.
+
+- 고정 Gmail query: `in:inbox newer_than:30d`, 최대 100개의 고유 message ID.
+- messages.list 및 messages.get(full)만으로 본문과 첨부 metadata를 읽는다. attachments.get / attachment binary decoding / AI 실행은 하지 않는다.
+- 신규 ITEM은 source=gmail, format=email, external_id=messageId, external_container_id=NULL, metadata.threadId=threadId, processing_status=queued.
+- 기존 ITEM 재수집은 원문 필드만 갱신하며 classification / Action / processing_status를 변경하지 않는다. 기존 user+connection+message unique index와 충돌 시 재조회로 중복을 막는다.
+- Token 조회/복호화/Google refresh/RPC 저장은 server-only 경계에 한정한다.
+- 응답은 `collected_count`, `created_count`, `updated_count`, `skipped_count`, `failed_count`, `complete`, `capped`, `query`, `max_messages`다. collected_count는 성공적으로 생성/갱신/재사용한 수의 합이다.
+- 개별 get/파싱/저장 실패는 failed_count로 보고한다. 실패가 있으면 성공한 ITEM을 보존하고 완료 기준점과 last_synced_at은 갱신하지 않는다.
+- 전체 성공 시 list 이전 profile historyId를 initial_collection 기준점으로 기록한다. capped는 목록의 다음 페이지 존재 여부이며 mailbox 전체 동기화 완료나 incremental cursor를 의미하지 않는다.
+- 연결 없음/disconnected/Token 없음/이미 수집 중은 409, refresh 실패는 401, Gmail/저장 오류는 502다. 내부 오류 원문이나 credential은 반환하지 않는다.
+
+Library/Detail GET 응답의 item에 `sourceCreatedAt`을 추가한다. Detail의 `gmail`은 Gmail ITEM일 때만 from/to/cc/bcc/dateHeader whitelist를 반환하며 기타 ITEM은 NULL이다. 메일 본문은 contentText plain text로 표시하고 raw metadata를 통째로 반환하지 않는다. 기존 createdAt 정렬/날짜 필터 기준은 유지한다.
+
+---
+
+## 13.2 ITEM 처리
+
+### POST `/api/internal/v1/process/items/{itemId}`
+
+상태 흐름:
+
+```text
+uploaded
+→ queued
+→ extracting
+→ analyzing
+→ indexing
+→ completed
+```
+
+실패:
+
+```text
+failed
++ processing_error
+```
+
+---
+
+# 14. AI 처리 Pipeline
+
+Worker 처리 순서:
+
+```text
+1. ITEM 조회
+2. Source별 원문 추출
+3. content_hash 중복 확인
+4. AI Structured Output 분석
+5. Classification 저장
+6. Action / Evidence Transaction
+7. Search Chunk 생성
+8. Embedding 생성
+9. completed 처리
+```
+
+AI Structured Output 상세 Schema는 별도 문서에서 정의한다.
+
+---
+
+# 15. ACTION / EVIDENCE TRANSACTION 규칙
+
+Action과 Evidence 변경은 동일 transaction에서 처리한다.
+
+PostgreSQL 오류:
+
+```text
+40001 serialization_failure
+40P01 deadlock_detected
+```
+
+발생 시:
+
+```text
+전체 transaction을 처음부터 재시도
+```
+
+중간 SQL 한 문장만 재실행하지 않는다.
+
+자동 재시도 금지:
+
+```text
+23503 foreign_key_violation
+23514 check_violation
+권한 오류
+업무 Validation 오류
+```
+
+---
+
+# 16. GOOGLE 변경 이벤트
+
+Google Push / PubSub Event 자체를 원본 데이터로 신뢰하지 않는다.
+
+```text
+Google 변경 알림
+→ Webhook / PubSub
+→ 이벤트 검증
+→ Connection 식별
+→ 실제 Google API 재조회
+→ ITEM Upsert
+→ 분석 Pipeline
+```
+
+Push Event는 “변경이 발생했다”는 신호로만 사용한다.
+
+---
+
+# 17. API 금지 범위
+
+v1에서는 다음 API를 만들지 않는다.
+
+```text
+/send-email
+/submit-application
+/pay
+/move-google-drive-file
+/delete-google-original
+/send-kakao
+/sms-sync
+```
+
+---
+
+# 18. SECURITY DEFINER 처리방향
+
+현재 DB:
+
+```text
+public.set_classification_override()
+SECURITY DEFINER
+authenticated EXECUTE
+```
+
+현재는 함수 내부에서 `auth.uid()` 및 ITEM 소유권을 검사한다.
+
+API 구현 시 최종 구조:
+
+```text
+Browser
+→ PATCH /api/v1/items/{itemId}/classification
+→ Next.js
+→ DB
+```
+
+API 구현 완료 후 후속 Migration에서:
+
+```text
+authenticated
+→ public.set_classification_override 직접 EXECUTE 제거
+```
+
+를 적용한다.
+
+---
+
+# 19. Public API 요약
+
+```text
+GET    /api/v1/connections
+POST   /api/v1/connections/google/authorize
+GET    /api/v1/connections/google/callback
+POST   /api/v1/connections/google/disconnect
+
+POST   /api/v1/uploads
+POST   /api/v1/uploads/{uploadId}/complete
+
+GET    /api/v1/items
+POST   /api/v1/items/text
+GET    /api/v1/items/{itemId}
+POST   /api/v1/items/{itemId}/retry
+PATCH  /api/v1/items/{itemId}/classification
+
+POST   /api/v1/search
+
+GET    /api/v1/actions
+GET    /api/v1/actions/{actionId}
+PATCH  /api/v1/actions/{actionId}/status
+
+DELETE /api/v1/data/uploads/{itemId}
+DELETE /api/v1/data/google-analysis
+DELETE /api/v1/data/all
+```
+
+---
+
+# 20. Internal API 요약
+
+```text
+POST /api/internal/v1/sync/google
+POST /api/internal/v1/process/items/{itemId}
+```
+
+---
+
+# 21. 구현 전 남은 결정사항
+
+다음 항목은 후속 단계에서 확정한다.
+
+1. Google OAuth Scope 최종 목록
+2. Google Token 암호화 및 저장 위치
+3. Worker 인증 방식
+4. Internal API 인증 방식
+5. Upload 최대 파일 크기
+6. 지원 MIME Type
+7. Search Ranking 가중치
+8. Gemini Embedding 모델 및 dimension
+9. Vector Index 방식
+10. Search Chunk 크기
+11. Retry 횟수 / Backoff
+12. 전체 데이터 삭제 시 재인증 방식
+13. API Rate Limit 정책
+
+---
+
+# 22. 개발 단계 상태
+
+```text
+✅ Wireframe
+✅ DB Migration
+✅ DB Optimization
+✅ API 명세 v0.1
+
+→ AI Structured Output
+⬜ 실제 구현
+```
