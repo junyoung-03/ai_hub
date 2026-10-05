@@ -5,6 +5,11 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo";
 const GMAIL_PROFILE_ENDPOINT = "https://gmail.googleapis.com/gmail/v1/users/me/profile";
 const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+export const DRIVE_DOCS_SCOPES = [
+  "https://www.googleapis.com/auth/drive.metadata.readonly",
+  "https://www.googleapis.com/auth/documents.readonly",
+] as const;
+export type GoogleOAuthPurpose = "connect" | "drive_scope_upgrade";
 
 export const GOOGLE_DATA_SCOPES = [
   "openid",
@@ -15,6 +20,7 @@ export const GOOGLE_DATA_SCOPES = [
 
 const ALLOWED_GRANTED_SCOPES = new Set([
   ...GOOGLE_DATA_SCOPES,
+  ...DRIVE_DOCS_SCOPES,
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ]);
@@ -90,16 +96,18 @@ export function getGoogleDataOAuthConfig(): GoogleDataOAuthConfig {
   return { clientId, clientSecret, redirectUri: parsed.toString() };
 }
 
-export function createGoogleAuthorizationUrl(config: GoogleDataOAuthConfig, state: string) {
+export function createGoogleAuthorizationUrl(config: GoogleDataOAuthConfig, state: string, purpose: GoogleOAuthPurpose = "connect", preservedScopes: readonly string[] = []) {
   const url = new URL(AUTHORIZATION_ENDPOINT);
   url.search = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
     response_type: "code",
-    scope: GOOGLE_DATA_SCOPES.join(" "),
+    scope: [...new Set([...GOOGLE_DATA_SCOPES, ...(purpose === "drive_scope_upgrade" ? DRIVE_DOCS_SCOPES : []),
+      ...preservedScopes.filter((scope) => DRIVE_DOCS_SCOPES.includes(scope as typeof DRIVE_DOCS_SCOPES[number]))])].join(" "),
     access_type: "offline",
     prompt: "consent select_account",
     state,
+    include_granted_scopes: "true",
   }).toString();
   return url.toString();
 }
@@ -117,10 +125,14 @@ async function safeJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
-export function validateGrantedScopes(rawScope: string): string[] {
+export function validateGrantedScopes(rawScope: string, purpose: GoogleOAuthPurpose = "connect", preservedScopes: readonly string[] = []): string[] {
   const scopes = [...new Set(rawScope.split(/\s+/).map((scope) => scope.trim()).filter(Boolean))].sort();
   if (
     !scopes.includes(GMAIL_READONLY_SCOPE) ||
+    (purpose === "drive_scope_upgrade" && DRIVE_DOCS_SCOPES.some((scope) => !scopes.includes(scope))) ||
+    (DRIVE_DOCS_SCOPES.some((scope) => scopes.includes(scope)) && DRIVE_DOCS_SCOPES.some((scope) => !scopes.includes(scope))) ||
+    preservedScopes.filter((scope) => scope === GMAIL_READONLY_SCOPE || DRIVE_DOCS_SCOPES.includes(scope as typeof DRIVE_DOCS_SCOPES[number]))
+      .some((scope) => !scopes.includes(scope)) ||
     scopes.some((scope) => !ALLOWED_GRANTED_SCOPES.has(scope))
   ) {
     throw new GoogleDataOAuthError("INVALID_SCOPE");
@@ -131,6 +143,8 @@ export function validateGrantedScopes(rawScope: string): string[] {
 export async function exchangeGoogleAuthorizationCode(
   config: GoogleDataOAuthConfig,
   code: string,
+  purpose: GoogleOAuthPurpose = "connect",
+  preservedScopes: readonly string[] = [],
 ): Promise<GoogleTokenSet> {
   let response: Response;
   try {
@@ -169,7 +183,7 @@ export async function exchangeGoogleAuthorizationCode(
     accessToken,
     refreshToken,
     expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
-    scopes: validateGrantedScopes(rawScope),
+    scopes: validateGrantedScopes(rawScope, purpose, preservedScopes),
   };
 }
 
@@ -211,7 +225,7 @@ export async function fetchGmailProfile(accessToken: string): Promise<GmailProfi
 }
 
 /** Refresh credentials never cross the server-only boundary. */
-export async function refreshGoogleAccessToken(refreshToken: string) {
+export async function refreshGoogleAccessToken(refreshToken: string, requiredScopes: readonly string[] = [], requireScopeResponse = false) {
   const config = getGoogleDataOAuthConfig();
   try {
     const response = await fetch(TOKEN_ENDPOINT, {
@@ -227,11 +241,13 @@ export async function refreshGoogleAccessToken(refreshToken: string) {
       || typeof payload.token_type !== "string" || payload.token_type.toLowerCase() !== "bearer") {
       throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");
     }
-    if (typeof payload.scope === "string") validateGrantedScopes(payload.scope);
+    if (requireScopeResponse && typeof payload.scope !== "string") throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");
+    const scopes = typeof payload.scope === "string" ? validateGrantedScopes(payload.scope, "connect", requiredScopes) : null;
     return {
       accessToken: payload.access_token.trim(),
       refreshToken: typeof payload.refresh_token === "string" && payload.refresh_token.trim() ? payload.refresh_token.trim() : null,
       tokenExpiresAt: new Date(Date.now() + payload.expires_in * 1000).toISOString(),
+      scopes,
     };
   } catch {
     throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");

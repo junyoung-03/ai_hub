@@ -11,7 +11,7 @@ type Connection = {
 
 export function GoogleConnectionPanel({ connection, notice }: { connection: Connection; notice: string | null }) {
   const router = useRouter();
-  const [pending, setPending] = useState<"connect" | "disconnect" | "sync" | null>(null);
+  const [pending, setPending] = useState<"connect" | "drive" | "disconnect" | "sync" | null>(null);
   const [message, setMessage] = useState<string | null>(notice);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
@@ -34,13 +34,14 @@ export function GoogleConnectionPanel({ connection, notice }: { connection: Conn
     finally { setPending(null); }
   }
 
-  async function connect() {
-    setPending("connect");
+  async function connect(drive = false) {
+    setPending(drive ? "drive" : "connect");
     setMessage(null);
     try {
       const response = await fetch("/api/v1/connections/google/authorize", {
         method: "POST",
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", ...(drive ? { "Content-Type": "application/json" } : {}) },
+        ...(drive ? { body: JSON.stringify({ purpose: "drive_scope_upgrade" }) } : {}),
         cache: "no-store",
       });
       const payload: unknown = await response.json();
@@ -116,7 +117,12 @@ export function GoogleConnectionPanel({ connection, notice }: { connection: Conn
       </dl>
 
       <div className="flex flex-wrap gap-3">
-        <button type="button" onClick={connect} disabled={pending !== null} className="min-h-10 rounded-md bg-primary px-4 text-sm text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
+        {connected && (
+          <button type="button" onClick={() => connect(true)} disabled={pending !== null} className="min-h-10 rounded-md border px-4 text-sm disabled:opacity-50">
+            {pending === "drive" ? "동의 준비 중…" : "Drive/Docs 읽기 권한 추가"}
+          </button>
+        )}
+        <button type="button" onClick={() => connect()} disabled={pending !== null} className="min-h-10 rounded-md bg-primary px-4 text-sm text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
           {pending === "connect" ? "연결 준비 중…" : connected ? "Google 메일 재연결" : "Google 메일 연결"}
         </button>
         {connected && (

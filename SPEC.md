@@ -1119,3 +1119,36 @@ AI 생성에 전달하는 구조 스키마는 provider 지원 subset이며, 저�
 이 Phase는 새로운 UI/UX, API 업무 기능, DB Schema/Migration/RLS 변경 또는 Gemini 재분석을
 포함하지 않는다. AI 출력 Schema/Prompt와 기존 분석 저장 구조를 변경하지 않았다.
 다음 단계의 명칭·목표·범위는 사용자 지시로 별도 확정하며, 이 완료 기록은 후속 구현 승인이 아니다.
+
+## 35. 승인된 Drive MVP 및 Drive-3 범위 (2026-10-05)
+
+Drive-1 COMPLETE, Drive-2 수정 승인. Google Docs만, 사용자가 지정한 폴더 바로 아래 문서 또는 명시한 fileId 집합만 수집한다.
+폴더 재귀 탐색/전체 Drive/공유 드라이브는 제외하며, 공유받은 개별 Docs는 명시 지정·읽기 권한이 있으면 허용한다.
+원본은 Google에 유지하며 Storage 복사본 없이 Unified ITEM의 텍스트·참조정보만 저장한다.
+source=drive, format=document, external_id=fileId, external_container_id=NULL, original_url 사용,
+storage_path=NULL, 신규 processing_status=queued. Google 생성/수정시각과 서비스 저장시각을 구분한다.
+
+수집 상한: 실행당 20건, 문서당 Unicode code point 100,000 AND UTF-8 400,000 bytes,
+실행 전체 새로 읽는 추출 텍스트 2,000,000 bytes, 병렬 2건, Google 요청 10초/파일 30초/실행 목표 120초,
+pageSize 20/최대 5페이지, 429/5xx만 추가 1회 retry. 실제 Vercel 설정과 실행 목표는 배포 전 확인한다.
+초과 문서는 truncate하지 않고 신규 ITEM 미생성/기존 정상 본문 유지 및 결과 구분.
+
+추출 계약: 모든 tab, 부모→child 순서, 본문/표/목차와 문서 순서 유지,
+includeTabsContent=true, PREVIEW_WITHOUT_SUGGESTIONS. header/footer/footnote/comment/image 내용/OCR/
+미수락 suggestion 제외. 제외 구조 여부를 metadata에 기록하고 전체 내용 지원으로 표시하지 않는다.
+tab 제목은 본문에 생성 삽입하지 않고 metadata에 Unicode code point 범위와 함께 기록한다.
+Google 원본 index는 Evidence offset으로 사용하지 않는다. 추출 버전은 docs-text-v1이다.
+
+동일 fileId는 같은 ITEM. modifiedTime 동일은 본문 다운로드 생략(정상 추출 기록/추출 버전 확인),
+변경은 같은 ITEM 갱신. 읽기 전후 modifiedTime 변경은 SOURCE_CHANGED로 이전 본문 유지.
+폴더 이동은 identity 유지. Classification/user override/Action/Evidence는 수집에서 변경하지 않는다.
+Google 삭제/접근 상실은 ITEM·본문 보존하며 목록 부재만으로 삭제 판정하지 않는다.
+사용자 직접 삭제/보존기간/Drive 분석/재분석/Search/Embedding은 후속 범위.
+Cross-ITEM Action 병합은 Drive AI 분석 전에 별도 결정한다.
+
+Drive 단계 체계는 Drive-1/Drive-2/Drive-3 총 3단계다. Drive-1/2/3 및 전체 Drive COMPLETE. 실제 검증 범위와 한계는 docs/PROJECT_STATE.md를 따른다.
+Drive-3 승인 범위는 OAuth/Token 경계, Drive client, Docs 추출, ITEM 저장·재수집, collect API와 실제 E2E/회귀 검증 전체다.
+서비스 로그인 OAuth는 변경하지 않는다. persist_drive_item은 정적 검증용 SQL 초안만 작성하고 별도 승인 전 적용하지 않는다.
+ITEM table/column/index/RLS 변경 금지. persist_drive_item 함수 적용은 별도 승인 후 개발 DB에서만 진행한다.
+Drive-3 완료 후 멈추고 Calendar는 시작하지 않는다.
+Restricted Scope 상용화 검증 및 하위 폴더 탐색은 TODO. drive.file+Google Picker는 이번 MVP에서 구현하지 않는다.

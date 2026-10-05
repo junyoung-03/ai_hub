@@ -1027,3 +1027,47 @@ requireUser(), 서버 세션 client, 모든 조회의 사용자 소유권 제한
 - npm test 52개, typecheck, lint, build, check:supabase, git diff --check 모두 PASS.
   Auth 연결 검사의 최초 EACCES는 로컬 sandbox 네트워크 차단이며, 네트워크 허용 실행에서 PASS했다.
   Google OAuth/세션 갱신/Logout/Re-login은 기존 mock 회귀 검증을 사용했으며 실제 OAuth를 재실행하지 않았다.
+
+## 24. Drive-3 Data OAuth / Token 경계 (2026-10-05)
+
+서비스 로그인 OAuth와 별도인 기존 Data OAuth 경로를 확장한다.
+POST /api/v1/connections/google/authorize: same-origin/Cookie 인증 필수.
+body 없음은 기존 Google 메일 동작. 정확히 {"purpose":"drive_scope_upgrade"}만 추가 허용하며 user_id/connection_id/임의 scopes를 받지 않는다.
+Drive 목적은 기존 connected 계정 필수(없으면 409). response는 기존 authorizationUrl만 반환하고 private no-store.
+초기 Gmail Scope는 기존 openid/email/profile/gmail.readonly이며 Drive 목적은 drive.metadata.readonly/documents.readonly 추가.
+이미 Drive 권한을 얻은 계정의 일반 재연결도 기존 데이터 권한을 요청한다. include_granted_scopes=true/access_type=offline.
+
+Callback 목적은 query가 아니라 HMAC cookie의 소유자/연결/Google 계정/연결 수정시각/10분 만료와 결합한다.
+실제 granted scopes 검증: Gmail 필수, Drive 목적에서는 두 신규 권한 필수, 허용 목록 외 권한 거부, 기존 데이터 권한 축소 거부.
+다른 계정/부분 승인/거절/실패/disconnect·연결 변경은 기존 정상 bundle을 덮어쓰지 않는다.
+신규 Refresh Token이 없으면 기존 Token으로 refresh하여 확장 권한·계정을 확인한 후 저장한다.
+새 Refresh Token이 있어도 offline 권한을 검증한다. 검증에 Scope 응답이 없으면 실패한다.
+Scope 확대 성공은 /settings?connection=drive_connected로 이동하며 파일 수집을 실행하지 않는다.
+이전 cookie 형식의 진행 중 인증은 거부하고 재시작한다. Token/provider raw error는 응답하지 않는다.
+계정/연결 식별자는 목적 검증용 HttpOnly 서명 cookie에만 결합하며 공개 JSON/redirect에는 추가하지 않는다.
+
+upsert_google_connection의 기존 signature는 유지하며 허용 Scope 두 개 추가/상한 8개/기존 데이터 권한 축소 방지를 적용하는 Migration 초안을 작성했다.
+upgrade_google_connection_scopes는 연결·Token snapshot을 비교하고 동일 계정 connected 상태에서만 저장하는 service_role 전용 RPC다.
+Gmail history_id/initial_collection을 포함한 sync_state 및 last_synced_at/connected_at을 원자 보존한다.
+refresh_google_connection_tokens_guarded는 connection→token lock과 기존 access ciphertext CAS로 오래된 refresh 덮어쓰기를 거부한다.
+기존 내부 refresh RPC는 유지하되 서버 호출은 guarded 경로를 사용한다. 함수 미적용 상태에서 해당 코드를 배포/실연결 실행하지 않는다.
+Scope SQL은 2026-10-05 ai-hub-dev 적용/history 등록 및 함수·권한·합성 보존/CAS/거절 검증 PASS.
+실제 Google 추가 동의 성공 및 다중 세션 동시성 검증과 구분한다. persist_drive_item은 별도 승인 후 ai-hub-dev 적용 및 합성 Runtime PASS다.
+
+drive.metadata.readonly는 Restricted, documents.readonly는 Sensitive. Google 동의 화면 Scope 등록 및 검증 영향은
+상용화 전 TODO로 유지하며 이번 작업에서 Console 설정을 변경하지 않는다. drive.file/Picker는 제외.
+Drive-3 endpoint POST /api/v1/connections/google/drive/collect: 구현·격리 검증 완료. 사용자 지정 Docs 1건으로 실제 collector/Google API/RPC/조회/reuse/RLS 검증 PASS. CLI auth/cookie adapter는 대체했으며 Browser 인증 HTTP E2E 재실행을 뜻하지 않는다. Drive 단계 COMPLETE 후 정지.
+입력은 folder mode 또는 files mode 중 하나, 응답은 파일별 결과 및 created/updated/reused/excluded/failed/unprocessed,
+complete/capped/stopReason/pagesRead/downloadedTextBytes/requestId. 본문/Token/raw error는 응답 금지.
+persist_drive_item canonical Migration은 supabase/migrations/20261005013202_persist_drive_item.sql이다. 별도 승인 후 dev 적용/history 등록 및 소유권/권한/identity/CAS/분석 보존/RLS/disconnect Runtime PASS.
+docs/drafts/drive/persist_drive_item.sql은 승인 초안 보관본이다. 지정 Docs 1건의 실제 저장/동일 버전 reuse/조회/원본 URL/사용자 RLS/Gmail 데이터 보존 PASS. 추가 수집 없이 정지한다.
+
+입력: {"mode":"folder","folderId":"Google fileId"} 또는 {"mode":"files","fileIds":["Google fileId"]}.
+추가 필드/임의 q/recursive/user_id/connection_id 금지. files는 1~20개 중복 없는 ID만 허용.
+파일별 결과: fileId/outcome 및 성공 시 itemId, 실패·제외 시 안전한 code. 제목/본문/raw error 제외.
+수집 제한은 SPEC 35절. full-document byte 예약으로 병렬 읽기의 quota 초과를 방지하며 잔여 quota가 400,000 bytes 미만이면 보수적으로 중단할 수 있다.
+downloadedTextBytes는 크기 검증을 통과한 지원 본문 UTF-8 합계이며 저장 실패/SOURCE_CHANGED도 포함한다. Google JSON 전송량은 포함하지 않는다.
+본문 요청 후 크기 초과·추출/다운로드 실패는 정확한 본문 크기를 알 수 없으므로 내부 quota에 400,000 bytes 예약을 그대로 차감한다.
+따라서 실패 문서를 반복 읽어 quota를 우회하지 않으며, 이 보수적 차감량을 downloadedTextBytes의 실제 추출량으로 표시하지 않는다.
+JSON 응답은 8 MB transport guard를 적용하고 넘으면 DOCUMENT_LIMIT로 저장 차단한다. 본문을 잘라 저장하지 않는다.
+실행 중 120초 cooperative deadline, route maxDuration=150초(auth/응답 여유). 실제 배포 플랜/Fluid 설정은 배포 전 확인한다.

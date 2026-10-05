@@ -9,11 +9,14 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:isolated",
-    "test:isolated": "node --test scripts/test-auth.mjs scripts/test-items.mjs scripts/test-gmail.mjs scripts/test-google-connections.mjs scripts/test-analysis.mjs",
+    "test:isolated": "node --test scripts/test-auth.mjs scripts/test-items.mjs scripts/test-gmail.mjs scripts/test-google-connections.mjs scripts/test-analysis.mjs scripts/test-drive-oauth.mjs scripts/test-drive.mjs",
     "check:supabase": "node scripts/check-supabase.mjs",
     "test:live:google-refresh": "node scripts/test-gmail-refresh-live.mjs",
     "test:live:analysis": "node scripts/test-analysis-live.mjs",
-    "test:live:analysis-db": "node scripts/test-analysis-db.mjs"
+    "test:live:analysis-db": "node scripts/test-analysis-db.mjs",
+    "test:live:drive-oauth-db": "node scripts/test-drive-oauth-db.mjs",
+    "test:live:drive-db": "node scripts/test-drive-db.mjs",
+    "test:live:drive": "node scripts/test-drive-live.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

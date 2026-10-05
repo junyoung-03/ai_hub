@@ -57,7 +57,8 @@ const adminClient = {
     if (name === "get_google_connection_tokens") {
       return { data: bundle ? [bundle] : [], error: null };
     }
-    assert.ok(["upsert_google_connection", "refresh_google_connection_tokens"].includes(name));
+    assert.ok(["upsert_google_connection", "refresh_google_connection_tokens_guarded"].includes(name));
+    if (name === "refresh_google_connection_tokens_guarded") assert.equal(args.p_expected_access_token_ciphertext, bundle.access_token_ciphertext);
     bundle = {
       access_token_ciphertext: args.p_access_token_ciphertext,
       access_token_iv: args.p_access_token_iv,
@@ -76,6 +77,7 @@ const connections = loadModule("../src/lib/google/connections.ts", {
   "@/lib/supabase/admin": { createAdminClient: () => adminClient },
   "@/lib/supabase/auth": { requireUser: async () => ({ id: currentUser }) },
   "@/lib/google/token-encryption": encryption,
+  "@/lib/google/data-oauth": { validateGrantedScopes: (scopes) => scopes.split(" ") },
 });
 
 try {
@@ -99,6 +101,7 @@ try {
   const savedRefresh = [bundle.refresh_token_ciphertext, bundle.refresh_token_iv, bundle.refresh_token_tag];
   await connections.refreshGoogleConnectionTokens(owner, connectionId, {
     accessToken: "synthetic-access-2", refreshToken: null, tokenExpiresAt: candidate.tokenExpiresAt,
+    expectedAccessTokenCiphertext: bundle.access_token_ciphertext,
   });
   assert.equal(lastRpcArgs.p_refresh_token_ciphertext, null);
   assert.equal(lastRpcArgs.p_refresh_token_iv, null);
@@ -107,6 +110,7 @@ try {
   assert.equal((await connections.getGoogleConnectionTokens(owner, connectionId)).accessToken, "synthetic-access-2");
   await connections.refreshGoogleConnectionTokens(owner, connectionId, {
     accessToken: "synthetic-access-3", refreshToken: "synthetic-refresh-3", tokenExpiresAt: candidate.tokenExpiresAt,
+    expectedAccessTokenCiphertext: bundle.access_token_ciphertext,
   });
   assert.equal((await connections.getGoogleConnectionTokens(owner, connectionId)).refreshToken, "synthetic-refresh-3");
 

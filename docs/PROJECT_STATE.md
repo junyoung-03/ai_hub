@@ -1,9 +1,9 @@
 # PROJECT_STATE — 새 Codex 채팅 인계
 
-최종 갱신: 2026-10-04 (Asia/Seoul)
+최종 갱신: 2026-10-05 (Asia/Seoul)
 프로젝트: `C:\Users\MYCOM\ai_hub`
-현재 상태: **Phase 1~6A COMPLETE, Phase 6B COMPLETE. 다음 단계 구현 미착수.**
-현재 허용 범위: 완료 검증·인계 종료. 다음 단계는 사용자 지시로 목표와 범위를 확정한 뒤 시작한다.
+현재 상태: **Phase 1~6A/6B COMPLETE. Drive-1 COMPLETE / Drive-2 COMPLETE / Drive-3 COMPLETE. 전체 Drive 단계 COMPLETE. Scope/ITEM RPC Runtime 및 지정된 실제 Docs 1건 E2E PASS.**
+현재 허용 범위: 승인된 Drive 검증을 완료하고 정지한다. 추가 문서 수집·Google 원본 수정·Gemini 호출·Calendar 착수는 하지 않는다.
 
 ## 1. 기준과 작업 원칙
 
@@ -169,3 +169,54 @@ test:live:google-refresh는 실제 Token bundle 갱신이므로 이번 읽기 �
 
 환경변수는 기존 구성 그대로다. SUPABASE_SECRET_KEY가 존재하며 대체 SERVICE_ROLE_KEY 미설정은
 현재 blocker가 아니다. GEMINI/Google/Supabase 환경값은 인계 문서나 로그에 기록하지 않는다.
+
+## 7. Drive-1/2 승인 및 Drive-3 인계 (2026-10-05)
+
+Drive-1 COMPLETE / Drive-2 수정 승인. 확정 제품 범위는 SPEC.md 35절, OAuth/API 계약은 API_SPEC.md 24절을 따른다.
+위 6절의 다음 단계 미확정 기록은 Phase 6B 종료 당시 기준이며 이번 Drive-3 승인으로 갱신됐다.
+
+- 구현: 기존 Data OAuth에 drive_scope_upgrade 목적 추가. 서비스 로그인은 변경하지 않았다.
+- 같은 Google 계정/연결 상태/실제 granted scopes 확인. Gmail/Drive 권한 축소·부분 동의·다른 계정·실패는 기존 bundle 저장을 차단한다.
+- OAuth state에 목적/소유자/연결/계정/연결 수정시각/10분 만료를 HMAC으로 결합한다. 이전 형식의 진행 중 state는 안전하게 거부하므로 연결 요청을 다시 시작해야 한다.
+- 신규/기존 Refresh Token으로 실제 반환 scope와 계정을 확인한 뒤 확장 bundle을 저장하는 서버 코드 구현. 실제 호출은 이번 작업에서 실행하지 않았다.
+- Scope 추가 RPC는 Gmail sync_state/history_id/initial_collection/last_synced_at/connected_at 보존. Guarded refresh는 이전 ciphertext snapshot으로 신규 bundle을 덮어쓰지 못하게 한다.
+- 기존 Gmail-only 최초 동의는 동일 Scope. 기존 Drive 권한이 있으면 일반 재연결에도 해당 권한을 요청해 우발적 축소를 막는다.
+- Scope Migration: supabase/migrations/20261004145244_google_drive_oauth_scope_boundary.sql — 2026-10-05 ai-hub-dev 적용/history 등록 완료.
+- persist_drive_item: supabase/migrations/20261005013202_persist_drive_item.sql — 별도 사용자 승인 후 ai-hub-dev 적용/history 등록 완료. docs/drafts/drive/persist_drive_item.sql은 승인 초안 보관본.
+- 두 SQL 모두 PostgreSQL SQL/PLpgSQL 파서 구문 및 보안/lock/CAS 정적 검사 PASS. Scope와 ITEM RPC 실제 DB 실행·권한·합성 보존/거절/CAS 검증 PASS. 다중 세션 경합은 별도 미실행이다.
+- 기존 52개 + Drive OAuth 10개 + 수집 13개 격리 테스트 PASS(총 75). typecheck/lint/build/check:supabase/diff 검사 PASS.
+- 이번 후속 작업은 실제 개발 DB Scope 적용 및 적용 전/후 합성 transaction/rollback 검증을 수행했다.
+  적용 전후 기존 connections/암호화 tokens/ITEM/Classification/Action/Evidence/table/column/index/RLS 및 기존 history hash 동일.
+  Scope 적용 당시 persist_drive_item 부재를 확인했고 Scope version 한 건만 등록했다. 이후 별도 승인으로 ITEM RPC Migration 한 건을 추가 적용했다. Production 미적용.
+  기존 Gmail 테스트 연결을 내부 식별해 실제 refresh 1회 및 profile PASS. 기존 Refresh Token/scopes/전체 sync_state/history_id/initial_collection/last_synced_at 보존 PASS.
+  사용자가 동일 계정으로 추가 동의 완료를 확인했고, 기존 연결에 저장된 Gmail+Drive/Docs 두 Scope와 동일 계정/연결 및 전체 Gmail checkpoint 보존을 실제 조회해 확인했다.
+  Gemini 호출 및 Google 동의 화면 설정 변경은 하지 않았다.
+
+**배포/실행 주의:** 신규 RPC는 ai-hub-dev에만 적용 확인했다. 다른 환경 배포 시 동일 함수 적용을 먼저 확인한다.
+Drive-3 COMPLETE. 수집 구현과 실제 검증은 모두 같은 Drive-3 범위에서 완료했으며 다음 Calendar 단계는 시작하지 않는다.
+Drive client/Docs 추출/collect API 구현 및 13개 격리 검사 PASS. persist_drive_item 수정 초안 SQL/PLpgSQL 파서 재검증 PASS.
+persist_drive_item 적용 전 DDL+합성 transaction/rollback, 적용 후 합성 RPC/RLS transaction/rollback PASS.
+service_role 전용/SECURITY DEFINER/빈 search_path 및 원격 함수 본문과 신규 Migration 일치 확인.
+user/connection 소유권·활성 연결·Scope/Token 확인, source=drive, create/reuse/update 동일 identity,
+SHA-256/size 검증, stale source/ITEM·동일 version 충돌 거절, 실패 원자 보존, Classification/Action/Evidence/user override 및 disconnect 본문 보존 PASS.
+적용·Runtime 이후 기존 connections/tokens/ITEM/분석/table/column/index/RLS/constraint/trigger/기존 함수/기존 history hash 동일. 합성 사용자 잔존 없음.
+신규 Migration과 모든 기존 local version은 remote와 일치. 기존 초기 2건 remote-only 제한은 그대로이며 전체 baseline 체인 완전 일치로 보고하지 않는다.
+신규 1건만 적용·이력 등록했고 기존 Migration 파일은 수정하지 않았다. 이후 아래 실제 Docs E2E를 완료했다.
+Migration/Runtime 완료 후 멈췄으며 이후 사용자가 실제 Docs 1건 E2E 진행을 승인했다.
+OAuth 실제 저장 상태 검증 PASS. 최초 metadata 조회의 HTTP 403 / SERVICE_DISABLED / accessNotConfigured는
+사용자의 Drive/Docs API 활성화 완료 후 해소됐다. 추가 문서 탐색 없이 지정된 Google Docs 1건만 재검증했다.
+실제 metadata → 모든 tab 텍스트 추출 → persist_drive_item 신규 ITEM 생성 PASS.
+같은 문서 재수집은 동일 ITEM ID 재사용, identity count=1, 본문 다운로드 횟수 증가 없음 PASS.
+Library/Detail 서버 조회 코드와 original_url 연결 PASS. 수집 전후 Gmail ITEM/connection Scope/전체 sync_state/
+last_synced_at 및 기존 Classification/Action/Evidence graph hash 동일 PASS.
+실제 저장 ITEM의 타 사용자 서버 조회 차단과 authenticated DB RLS의 소유자 허용/타 사용자 거부 PASS.
+CLI auth/cookie adapter는 대체했고 실제 RLS는 별도 DB transaction/rollback으로 검증했다.
+이번 검증은 Browser cookie 기반 collect HTTP/UI E2E를 재실행했다는 의미가 아니다.
+실제 문서 수정/update는 원본을 변경하지 않아 미실행이며 update/SOURCE_CHANGED는 격리 및 RPC Runtime 검증을 따른다.
+최종 npm test 75개/typecheck/lint/build/check:supabase/git diff --check PASS. 추가 Migration/Schema 변경 없음.
+실제 Drive ITEM 1건만 신규 저장했으며 Google 원본 변경/추가 문서 수집/Gemini 호출은 없다. Drive 완료 blocker 없음.
+문서 본문/계정/credential/raw error를 로그에 출력하지 않는다. Calendar는 진행하지 않는다.
+
+TODO: drive.metadata.readonly Restricted Scope 상용화 검증 재검토, Vercel 실제 실행 제한 확인,
+하위 폴더 탐색(후속 범위), Cross-ITEM Action 병합(Drive AI 분석 전 필수 결정).
+Google Picker/drive.file/AI/Search/Embedding은 구현하지 않았다.

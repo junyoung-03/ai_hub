@@ -17,13 +17,18 @@ export async function createGmailClient(userId: string, connectionId: string) {
   const saved = await getGoogleConnectionTokens(userId, connectionId);
   if (!saved) throw new GmailCollectionError("TOKEN_MISSING");
   let accessToken = saved.accessToken, refreshToken = saved.refreshToken, expiresAt = saved.expiresAt;
+  let expectedAccessTokenCiphertext = saved.accessTokenCiphertext;
+  const requiredScopes = saved.scopes;
   let refreshing: Promise<void> | null = null;
   async function refresh() {
     if (!refreshing) refreshing = (async () => {
       try {
         if (!refreshToken) throw new Error("Missing refresh credentials.");
-        const next = await refreshGoogleAccessToken(refreshToken);
-        if (!await refreshGoogleConnectionTokens(userId, connectionId, next)) throw new Error("Connection no longer active.");
+        const next = await refreshGoogleAccessToken(refreshToken, requiredScopes);
+        if (!await refreshGoogleConnectionTokens(userId, connectionId, { ...next, expectedAccessTokenCiphertext })) throw new Error("Connection no longer active.");
+        const stored = await getGoogleConnectionTokens(userId, connectionId);
+        if (!stored || stored.accessToken !== next.accessToken) throw new Error("Credentials changed concurrently.");
+        expectedAccessTokenCiphertext = stored.accessTokenCiphertext;
         accessToken = next.accessToken;
         refreshToken = next.refreshToken ?? refreshToken;
         expiresAt = next.tokenExpiresAt;

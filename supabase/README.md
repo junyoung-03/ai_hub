@@ -1,6 +1,6 @@
 # SQL 기준 파일과 개발 DB Migration 이력
 
-2026-10-04 기준. 대상은 개발 프로젝트 **ai-hub-dev**, project ref `oclzdppdiljbojvqtkeu`다. Production 적용 기준을 확정하는 문서가 아니다.
+2026-10-05 기준. 대상은 개발 프로젝트 **ai-hub-dev**, project ref `oclzdppdiljbojvqtkeu`다. Production 적용 기준을 확정하는 문서가 아니다.
 
 ## 역할과 적용 순서
 
@@ -10,6 +10,8 @@
 | 2 | `../0002_db_optimization.sql` | v0.1 | `20261003104321` | `db_optimization_v01` | remote only |
 | 3 | `migrations/20261004045936_google_data_oauth_token_storage.sql` | Phase 4 수정본 | `20261004045936` | `google_data_oauth_token_storage` | local/remote 일치 |
 | 4 | `migrations/20261004115419_persist_gmail_item_analysis.sql` | 승인된 Phase 6A RPC | `20261004115419` | `persist_gmail_item_analysis` | dev 적용 및 history 등록 |
+| 5 | `migrations/20261004145244_google_drive_oauth_scope_boundary.sql` | 승인된 Drive-3 Scope 경계 | `20261004145244` | `google_drive_oauth_scope_boundary` | dev 적용 및 history 등록 |
+| 6 | `migrations/20261005013202_persist_drive_item.sql` | 승인된 Drive-3 ITEM RPC | `20261005013202` | `persist_drive_item` | local/remote 일치, dev Runtime PASS |
 
 Phase 6A 순서 4는 기존 테이블·Evidence trigger·AI 분류 RPC에 의존하며 테이블 구조는 변경하지 않는다.
 승인 후 ai-hub-dev에 해당 SQL만 실행했고 해당 version만 applied history로 등록했다.
@@ -56,3 +58,20 @@ npx --yes supabase@latest db query --linked "select version,name from supabase_m
 ```
 
 SQL/RPC Runtime 검증과 Google/Gmail 실연결 테스트는 `../scripts/README.md`, 상세 제품·구현 기준은 루트 `SPEC.md`를 따른다.
+
+## Drive-3 Scope / ITEM RPC 적용 (2026-10-05)
+
+- `migrations/20261004145244_google_drive_oauth_scope_boundary.sql`: ai-hub-dev 적용/history 등록 완료.
+  기존 upsert Scope 허용 목록·축소 방지와 새 upgrade/guarded refresh 함수만 포함한다. 기존 table/column/index/RLS 변경 없음.
+- `migrations/20261005013202_persist_drive_item.sql`: 별도 승인 후 신규 1건만 dev 적용 및 해당 history 등록. 승인 초안은 `../docs/drafts/drive/persist_drive_item.sql`에 보관한다.
+- 두 파일 SQL/PLpgSQL 파서 구문 및 보안/lock/CAS 정적 검사 PASS. ITEM RPC 적용 전/후 합성 transaction/rollback Runtime PASS.
+- Scope SQL은 적용 전 DDL+합성 데이터 transaction/rollback, 적용 후 합성 transaction/rollback 모두 PASS.
+  service_role 전용 권한, 거절 시 원자 보존, Gmail checkpoint, stale snapshot/CAS, downgrade 금지, refresh, disconnect 차단 확인.
+  다중 세션 경합 및 실제 Google 추가 동의는 별도이며 합성 검사로 대체하지 않는다.
+- 적용 전후 기존 connections/tokens/ITEM/Classification/Action/Evidence와 table/column/index/RLS 및 기존 history의 hash가 동일했다.
+  Scope 적용 당시 ITEM RPC는 부재였고, 이후 별도 승인으로 ITEM RPC 신규 한 건만 적용했다. 기존 history 수정/delete/reset 또는 다른 Migration 재적용은 하지 않았다.
+- ITEM 적용 후 본문·service_role 전용 권한·SECURITY DEFINER·빈 search_path 및 local/remote 신규 version 일치 확인.
+  소유권/활성 연결/Scope/Token/create/reuse/update/source stale/ITEM CAS/hash/size/분석·override 보존/RLS/disconnect Runtime PASS.
+  적용 후 Runtime도 전체 rollback했으며 기존 실제 데이터·스키마·constraint·trigger·기존 함수·기존 이력은 전후 hash 동일.
+  모든 local version은 remote와 일치하고 초기 2건 remote-only 상태는 유지했다. 전체 baseline 체인 일치로 확대 해석하지 않는다.
+  기존 Migration 파일 수정 없음. 실제 Docs E2E 전에 사용자 요청으로 대기한다.

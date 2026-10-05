@@ -488,6 +488,22 @@ export type Database = {
         }
         Returns: Json
       }
+      persist_drive_item: {
+        Args: {
+          p_user_id: string
+          p_connection_id: string
+          p_file_id: string
+          p_title: string
+          p_original_url: string
+          p_content_text: string
+          p_content_hash: string
+          p_source_created_at: string
+          p_source_updated_at: string
+          p_drive_metadata: Json
+          p_expected_item_updated_at: string | null
+        }
+        Returns: Json
+      }
       refresh_google_connection_tokens: {
         Args: {
           p_access_token_ciphertext: string
@@ -502,6 +518,24 @@ export type Database = {
           p_user_id: string
         }
         Returns: boolean
+      }
+      refresh_google_connection_tokens_guarded: {
+        Args: Omit<Database["public"]["Functions"]["refresh_google_connection_tokens"]["Args"],
+          "p_refresh_token_ciphertext" | "p_refresh_token_iv" | "p_refresh_token_tag"> & {
+          p_expected_access_token_ciphertext: string
+          p_refresh_token_ciphertext: string | null
+          p_refresh_token_iv: string | null
+          p_refresh_token_tag: string | null
+        }
+        Returns: boolean
+      }
+      upgrade_google_connection_scopes: {
+        Args: Omit<Database["public"]["Functions"]["upsert_google_connection"]["Args"], "p_gmail_history_id"> & {
+          p_connection_id: string
+          p_expected_connection_updated_at: string
+          p_expected_access_token_ciphertext: string
+        }
+        Returns: string
       }
       set_classification_override: {
         Args: {

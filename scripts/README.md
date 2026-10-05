@@ -6,13 +6,16 @@
 
 | 명령 | 실행 파일 / 범위 | 외부 서비스 | 실제 DB 변경 |
 | --- | --- | --- | --- |
-| `npm test` 또는 `npm run test:isolated` | 아래 5개 격리 테스트 | 없음 | 없음 |
+| `npm test` 또는 `npm run test:isolated` | 아래 7개 격리 테스트 파일 | 없음 | 없음 |
 | `npm run lint` | ESLint | 없음 | 없음 |
 | `npm run typecheck` | TypeScript | 없음 | 없음 |
 | `npm run build` | Next.js build | 현재 구현에서 없음 | 없음 |
 | `npm run check:supabase` | `check-supabase.mjs` | Supabase Auth 설정 GET | 없음 |
 | `npm run test:live:google-refresh` | `test-gmail-refresh-live.mjs` | 개발 Supabase 및 Google token/profile API | 테스트 계정의 암호화 Token bundle 갱신 |
 | `npm run test:live:analysis-db` | `test-analysis-db.mjs` | 개발 Supabase | 합성 데이터 transaction 후 전체 rollback |
+| `npm run test:live:drive-oauth-db` | `test-drive-oauth-db.mjs` | 개발 Supabase | 합성 사용자/연결/Token transaction 후 전체 rollback |
+| `npm run test:live:drive-db` | `test-drive-db.mjs` | 개발 Supabase | 적용 승인 후 합성 ITEM/분류/Action/Evidence transaction 후 rollback |
+| `npm run test:live:drive` | `test-drive-live.mjs` | 기본은 개발 DB Scope 확인만; `--collect`는 실제 Drive/Docs | `--collect`에서 명시한 Docs 1건 ITEM 생성/업데이트 |
 | `npm run test:live:analysis` | `test-analysis-live.mjs` | 개발 Supabase + Gemini | 최대 5개 실제 저장 Gmail ITEM 분석 저장 |
 
 ## 격리 테스트
@@ -26,8 +29,44 @@ npm test
 - `test-gmail.mjs`: 합성 MIME/HTML/Header 파싱, Token 갱신 mock, 100건 상한, 중복/부분 실패/사용자 격리.
 - `test-google-connections.mjs`: 합성 Token의 AES-GCM roundtrip/tamper, RPC 인자, Refresh Token 유지/교체 및 연결 해제.
 - `test-analysis.mjs`: v0.2 schema, 원문/Unicode Evidence 위치, 날짜 구분, no-action, Gemini mock, 저장 전 validation 및 transaction retry/사용자 격리, 429/503 최대 재시도.
+- `test-drive-oauth.mjs`: Drive-3 Scope/purpose/state/callback, 거절·부분 동의·다른 계정·refresh 실패 저장 차단, 암호화 RPC 인자 및 SQL 초안 정적 규칙. 실제 DB/Google 호출 없음.
+- `test-drive.mjs`: 입력 경계, Docs 모든 tab/본문/표/목차/제외 metadata/Unicode 범위, Google 요청 계약/retry, create/reuse/update, SOURCE_CHANGED, 상한/병렬/timeout/API 거절 및 SQL 정적 검사.
 
 Fixture는 메모리에 있으며 실제 메일, Secret 또는 DB 연결이 필요하지 않다. Google Connection 파일은 기존 assertion suite를 하나의 파일 단위 테스트로 실행한다. Phase 6A는 9개 개별 검사를 추가한다.
+
+Drive-3는 총 75개 격리 테스트 PASS. 기존 Gmail 테스트 연결의 실제 refresh 1회/profile 및 Token/Scope/checkpoint 보존 PASS.
+동일 계정 Drive 추가 동의 후 저장 Scope/계정/연결/Gmail checkpoint 확인 PASS. 지정 Docs 1건 실제 생성/reuse/조회/원본 URL/사용자 RLS/Gmail 보존 PASS. Drive-3 및 전체 Drive COMPLETE. DB 실행 결과는 아래 별도 검사 기록을 따른다.
+두 SQL 초안은 임시 도구 pglast 8.5로 SQL 및 PL/pgSQL 구문 분석 PASS이며 앱 dependency에는 추가하지 않았다.
+파서 구문 검사는 실제 DB 관계·권한·동시성 실행 검증을 대신하지 않는다.
+Scope Migration은 2026-10-05 ai-hub-dev 적용/history 등록 및 RPC 런타임 검증 PASS다. 다른 환경에 적용된 것으로 간주하지 않는다.
+
+## Drive-3 Scope RPC 실제 DB 검사
+
+`DRIVE_OAUTH_TEST_PROJECT=oclzdppdiljbojvqtkeu`를 명시하고 Supabase CLI 인증 후 `npm run test:live:drive-oauth-db`를 실행한다.
+service_role 전용 권한, 부분 Scope/다른 계정/소유권/오래된 snapshot 거절, 실패 원자 보존,
+Gmail checkpoint 보존, downgrade 방지, guarded refresh와 disconnect 저장 차단을 검증한다.
+합성 데이터는 전체 rollback한다. Google API는 호출하지 않는다. 적용 전 `--with-draft`는 Scope DDL도 rollback한다.
+이미 적용된 DB에서는 `--with-draft`를 사용하지 않는다. persist_drive_item 초안은 읽거나 적용하지 않는다.
+다중 세션 동시성 및 Browser 추가 동의 성공 검증을 대신하지 않는다.
+
+## Drive-3 실제 Docs 검증 — 적용/사용자 동의 후 실행
+
+`DRIVE_DB_TEST_PROJECT=oclzdppdiljbojvqtkeu`에서 `npm run test:live:drive-db`는 적용된 persist_drive_item을 검증한다.
+`--with-draft`는 별도 적용 승인을 받은 뒤, 적용 전에만 DDL도 포함하여 transaction/rollback 검증한다.
+권한/create/reuse/update/hash/size/stale CAS/분류·Action·Evidence·override 보존/사용자 RLS/disconnect를 검사한다.
+2026-10-05 승인 후 적용 전 DDL+합성 rollback 및 적용 후 Runtime rollback PASS. 실제 Docs/Gemini 호출 없음.
+신규 Migration은 20261005013202_persist_drive_item.sql이며 기존 Migration 파일/기존 실제 데이터/스키마/이력을 보존했다.
+적용 후에는 --with-draft를 사용하지 않는다. 사용자가 지정한 1건의 실제 E2E는 2026-10-05 PASS했으며 추가 수집 없이 정지했다.
+
+`DRIVE_LIVE_TEST_PROJECT=oclzdppdiljbojvqtkeu`에서 `node scripts/test-drive-live.mjs --before-consent`로
+기존 Gmail 수집 이력이 있는 단일 연결의 소유권·Scope·checkpoint만 Git-ignored 파일에 내부 보관한다. Token은 기록하지 않는다.
+같은 Google 계정으로 Settings의 Drive/Docs 추가 동의 후 `npm run test:live:drive`는 저장된 Scope/계정/checkpoint를 읽어 확인한다.
+사용자가 명시한 1건의 fileId를 `DRIVE_TEST_FILE_ID`에 설정하고 `node scripts/test-drive-live.mjs --collect`를 실행하면
+실제 metadata/Docs/ITEM/재수집 reuse/Library·Detail 코드/original_url/Gmail ITEM 불변을 검증한다.
+수집 전후 Gmail connection Scope·전체 sync_state·last_synced_at 및 기존 Classification/Action/Evidence graph도 hash 비교한다.
+저장된 실제 ITEM에 대해 타 사용자 서버 조회 및 authenticated DB RLS 읽기 차단을 검사하며 SQL claims/role 변경은 transaction/rollback한다.
+CLI에서는 auth/cookie adapter를 개발 DB admin으로 대체하므로 실제 사용자 RLS는 위 SQL 검사로, Browser 접근은 별도로 검증한다.
+최초 1건 PASS 전 대상 추가 금지. Google 원본 수정 및 Gemini 호출은 하지 않는다. 본문/제목/계정/credential/raw error 출력 금지.
 
 ## Phase 6A 실제 분석 검증 — 명시적 실행
 
@@ -59,7 +98,8 @@ npm run check:supabase
 
 ## 실제 Google Refresh 검사 — 명시적 실행
 
-이 명령은 테스트 Connection의 저장 Token을 실제로 갱신한다. `npm test`나 다른 기본 검증에 포함되지 않는다. ai-hub-dev에 connected 상태인 계정이 있어야 하며, 현재 스크립트는 서비스 로그인 이메일과 Data Connection 이메일이 같은 테스트 계정만 허용한다.
+이 명령은 테스트 Connection의 저장 Token을 실제로 갱신한다. `npm test`나 다른 기본 검증에 포함되지 않는다. ai-hub-dev의 단일 connected Google 연결과 해당 소유자의 기존 Gmail 수집 이력이 필요하다.
+사용자가 기존 테스트 연결을 명시 승인한 경우 `--existing-test-connection`은 이메일 입력 없이 단일 connected Google 연결과 저장 Gmail 이력으로 내부 식별한다. 복수 연결이면 실행하지 않는다.
 
 필수 조건:
 

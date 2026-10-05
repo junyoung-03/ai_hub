@@ -3,6 +3,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   GoogleConnectionStorageUnavailableError,
   persistGoogleConnection,
+  getGoogleOAuthConnection,
+  getGoogleConnectionTokens,
+  persistGoogleScopeUpgrade,
 } from "@/lib/google/connections";
 import {
   exchangeGoogleAuthorizationCode,
@@ -10,8 +13,10 @@ import {
   fetchGoogleIdentity,
   getGoogleDataOAuthConfig,
   GoogleDataOAuthError,
+  refreshGoogleAccessToken,
+  validateGrantedScopes,
 } from "@/lib/google/data-oauth";
-import { verifyGoogleOAuthState } from "@/lib/google/oauth-state";
+import { readGoogleOAuthState } from "@/lib/google/oauth-state";
 import { GOOGLE_OAUTH_CALLBACK_PATH, GOOGLE_OAUTH_STATE_COOKIE } from "@/lib/google/oauth-state";
 import { AuthenticationRequiredError, requireUser } from "@/lib/supabase/auth";
 
@@ -19,6 +24,7 @@ export const runtime = "nodejs";
 
 type CallbackResult =
   | "connected"
+  | "drive_connected"
   | "denied"
   | "invalid_state"
   | "oauth_failed"
@@ -58,12 +64,13 @@ export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
     const config = getGoogleDataOAuthConfig();
-    if (!verifyGoogleOAuthState(
+    const context = readGoogleOAuthState(
       state,
       request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)?.value,
       user.id,
       config.clientSecret,
-    )) {
+    );
+    if (!context) {
       return finish("invalid_state");
     }
 
@@ -71,7 +78,34 @@ export async function GET(request: NextRequest) {
     const code = oneParameter(params, "code");
     if (!code) return finish("oauth_failed");
 
-    const tokens = await exchangeGoogleAuthorizationCode(config, code);
+    const current = await getGoogleOAuthConnection(user.id);
+    if (context.purpose === "drive_scope_upgrade" && (!current || current.status !== "connected"
+      || current.id !== context.connectionId || current.provider_account_id !== context.accountId
+      || current.updated_at !== context.connectionUpdatedAt)) return finish("storage_unavailable");
+    const tokens = await exchangeGoogleAuthorizationCode(config, code, context.purpose, current?.scopes ?? []);
+    if (context.purpose === "drive_scope_upgrade" && current && context.connectionUpdatedAt) {
+      const identity = await fetchGoogleIdentity(tokens.accessToken);
+      if (identity.providerAccountId !== context.accountId) return finish("profile_failed");
+      const saved = await getGoogleConnectionTokens(user.id, current.id);
+      if (!saved) return finish("storage_unavailable");
+      // Prove offline capability BEFORE replacing the saved bundle, even if Google omitted a new refresh token.
+      const refreshToken = tokens.refreshToken ?? saved.refreshToken;
+      if (!refreshToken) return finish("storage_unavailable");
+      const refreshed = await refreshGoogleAccessToken(refreshToken, tokens.scopes, true);
+      const scopes = validateGrantedScopes((refreshed.scopes ?? []).join(" "), "drive_scope_upgrade", current.scopes);
+      const [refreshedIdentity, gmail] = await Promise.all([
+        fetchGoogleIdentity(refreshed.accessToken), fetchGmailProfile(refreshed.accessToken),
+      ]);
+      if (refreshedIdentity.providerAccountId !== context.accountId
+        || refreshedIdentity.email.toLowerCase() !== gmail.emailAddress.toLowerCase()) return finish("profile_failed");
+      await persistGoogleScopeUpgrade({
+        userId: user.id, connectionId: current.id, providerAccountId: identity.providerAccountId,
+        accountEmail: refreshedIdentity.email, scopes, accessToken: refreshed.accessToken,
+        refreshToken: refreshed.refreshToken ?? refreshToken, tokenExpiresAt: refreshed.tokenExpiresAt,
+        expectedConnectionUpdatedAt: context.connectionUpdatedAt, expectedAccessTokenCiphertext: saved.accessTokenCiphertext,
+      });
+      return finish("drive_connected");
+    }
     const [identity, gmailProfile] = await Promise.all([
       fetchGoogleIdentity(tokens.accessToken),
       fetchGmailProfile(tokens.accessToken),
@@ -79,6 +113,8 @@ export async function GET(request: NextRequest) {
     if (identity.email.toLowerCase() !== gmailProfile.emailAddress.toLowerCase()) {
       return finish("profile_failed");
     }
+    if (current?.status === "connected" && identity.providerAccountId !== current.provider_account_id)
+      return finish("profile_failed");
 
     await persistGoogleConnection({
       userId: user.id,

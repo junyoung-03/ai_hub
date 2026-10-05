@@ -96,7 +96,11 @@ function gmailHarness({ expired = false, missing = false, refreshFails = false, 
   const requests = [], saved = [];
   let refreshCount = 0;
   const connections = {
-    async getGoogleConnectionTokens(user, connection) { assert.equal(user, "owner"); assert.equal(connection, "connection"); return missing ? null : { accessToken: "synthetic-old", refreshToken: "synthetic-refresh", expiresAt: new Date(Date.now() + (expired ? -1 : 3600000)).toISOString() }; },
+    async getGoogleConnectionTokens(user, connection) { assert.equal(user, "owner"); assert.equal(connection, "connection"); return missing ? null : {
+      accessToken: saved.at(-1)?.accessToken ?? "synthetic-old", refreshToken: "synthetic-refresh",
+      accessTokenCiphertext: saved.length ? "synthetic-new-cipher" : "synthetic-old-cipher",
+      scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+      expiresAt: new Date(Date.now() + (expired && !saved.length ? -1 : 3600000)).toISOString() }; },
     async refreshGoogleConnectionTokens(user, connection, values) { assert.equal(user, "owner"); assert.equal(connection, "connection"); saved.push(values); return true; },
   };
   const api = load("src/lib/google/gmail-client.ts", {

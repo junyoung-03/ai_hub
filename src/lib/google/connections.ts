@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/supabase/auth";
 import { getGoogleTokenEncryptionKey, openGoogleToken, sealGoogleToken } from "@/lib/google/token-encryption";
+import { validateGrantedScopes } from "@/lib/google/data-oauth";
 
 export type GoogleConnectionSummary = {
   id: string;
@@ -71,15 +72,26 @@ async function verifyOwner(userId: string) {
   if (user.id !== userId) throw new Error("Google connection ownership mismatch.");
 }
 
+/** Server OAuth context, excluded from public JSON. Identity is bound in the signed HttpOnly state cookie. */
+export async function getGoogleOAuthConnection(userId: string) {
+  await verifyOwner(userId);
+  const client = await createClient();
+  const { data, error } = await client.from("connections")
+    .select("id,provider_account_id,status,scopes,updated_at")
+    .eq("user_id", userId).eq("provider", "google").order("updated_at", { ascending: false }).limit(2);
+  if (error || data.length > 1) throw new GoogleConnectionStorageUnavailableError();
+  return data[0] ?? null;
+}
+
 async function getOwnedConnection(userId: string, connectionId: string) {
   await verifyOwner(userId);
   const supabase = await createClient();
   const { data, error } = await supabase.from("connections")
-    .select("provider_account_id")
+    .select("provider_account_id,scopes")
     .eq("id", connectionId).eq("user_id", userId)
     .eq("provider", "google").eq("status", "connected").maybeSingle();
   if (error) throw new Error("Unable to verify Google connection ownership.");
-  return data?.provider_account_id ?? null;
+  return data?.provider_account_id ? { accountId: data.provider_account_id, scopes: data.scopes ?? [] } : null;
 }
 
 /** Plaintext credentials stay within this server-only module's callers. */
@@ -115,8 +127,9 @@ export async function persistGoogleConnection(candidate: GoogleConnectionCandida
 }
 
 export async function getGoogleConnectionTokens(userId: string, connectionId: string) {
-  const accountId = await getOwnedConnection(userId, connectionId);
-  if (!accountId) return null;
+  const owned = await getOwnedConnection(userId, connectionId);
+  if (!owned) return null;
+  const accountId = owned.accountId;
   const { data, error } = await createAdminClient().rpc("get_google_connection_tokens", {
     p_user_id: userId, p_connection_id: connectionId,
   });
@@ -129,6 +142,8 @@ export async function getGoogleConnectionTokens(userId: string, connectionId: st
     accessToken: openGoogleToken({ ciphertext: bundle.access_token_ciphertext, iv: bundle.access_token_iv, tag: bundle.access_token_tag, version: 1 }, tokenContext(userId, accountId, "access"), key),
     refreshToken: openGoogleToken({ ciphertext: bundle.refresh_token_ciphertext, iv: bundle.refresh_token_iv, tag: bundle.refresh_token_tag, version: 1 }, tokenContext(userId, accountId, "refresh"), key),
     expiresAt: bundle.token_expires_at,
+    accessTokenCiphertext: bundle.access_token_ciphertext,
+    scopes: owned.scopes,
   };
 }
 
@@ -136,23 +151,55 @@ export async function getGoogleConnectionTokens(userId: string, connectionId: st
 export async function refreshGoogleConnectionTokens(
   userId: string,
   connectionId: string,
-  tokens: Pick<GoogleConnectionCandidate, "accessToken" | "refreshToken" | "tokenExpiresAt">,
+  tokens: Pick<GoogleConnectionCandidate, "accessToken" | "refreshToken" | "tokenExpiresAt"> & { expectedAccessTokenCiphertext: string },
 ): Promise<boolean> {
-  const accountId = await getOwnedConnection(userId, connectionId);
-  if (!accountId) return false;
+  const owned = await getOwnedConnection(userId, connectionId);
+  if (!owned) return false;
+  const accountId = owned.accountId;
   const key = getGoogleTokenEncryptionKey();
   const access = sealGoogleToken(tokens.accessToken, tokenContext(userId, accountId, "access"), key);
   const refresh = tokens.refreshToken === null ? null
     : sealGoogleToken(tokens.refreshToken, tokenContext(userId, accountId, "refresh"), key);
-  const { data, error } = await createAdminClient().rpc("refresh_google_connection_tokens", {
+  // This snapshot must be captured BEFORE the outbound refresh, never at save time.
+  const expected = tokens.expectedAccessTokenCiphertext;
+  if (!expected) return false;
+  const { data, error } = await createAdminClient().rpc("refresh_google_connection_tokens_guarded", {
     p_user_id: userId, p_connection_id: connectionId,
     p_access_token_ciphertext: access.ciphertext, p_access_token_iv: access.iv, p_access_token_tag: access.tag,
     p_refresh_token_ciphertext: refresh?.ciphertext ?? null,
     p_refresh_token_iv: refresh?.iv ?? null, p_refresh_token_tag: refresh?.tag ?? null,
     p_token_expires_at: tokens.tokenExpiresAt, p_encryption_version: access.version,
+    p_expected_access_token_ciphertext: expected,
   });
   if (error) throw new Error("Unable to refresh stored Google credentials.");
   return data;
+}
+
+/** Scope upgrade uses a separate narrow RPC; it cannot create or reconnect an account. */
+export async function persistGoogleScopeUpgrade(candidate: Omit<GoogleConnectionCandidate, "gmailHistoryId"> & {
+  connectionId: string; expectedConnectionUpdatedAt: string; expectedAccessTokenCiphertext: string;
+}) {
+  await verifyOwner(candidate.userId);
+  const current = await getGoogleOAuthConnection(candidate.userId);
+  if (!current || current.id !== candidate.connectionId || current.status !== "connected"
+    || current.provider_account_id !== candidate.providerAccountId || current.updated_at !== candidate.expectedConnectionUpdatedAt)
+    throw new GoogleConnectionStorageUnavailableError();
+  const scopes = validateGrantedScopes(candidate.scopes.join(" "), "drive_scope_upgrade", current.scopes);
+  const key = getGoogleTokenEncryptionKey();
+  const access = sealGoogleToken(candidate.accessToken, tokenContext(candidate.userId, candidate.providerAccountId, "access"), key);
+  // Callback always verifies a concrete refresh token before saving an upgrade.
+  if (!candidate.refreshToken) throw new GoogleConnectionStorageUnavailableError();
+  const refresh = sealGoogleToken(candidate.refreshToken, tokenContext(candidate.userId, candidate.providerAccountId, "refresh"), key);
+  const { data, error } = await createAdminClient().rpc("upgrade_google_connection_scopes", {
+    p_user_id: candidate.userId, p_connection_id: candidate.connectionId,
+    p_provider_account_id: candidate.providerAccountId, p_account_email: candidate.accountEmail, p_scopes: scopes,
+    p_expected_connection_updated_at: candidate.expectedConnectionUpdatedAt,
+    p_expected_access_token_ciphertext: candidate.expectedAccessTokenCiphertext,
+    p_access_token_ciphertext: access.ciphertext, p_access_token_iv: access.iv, p_access_token_tag: access.tag,
+    p_refresh_token_ciphertext: refresh.ciphertext, p_refresh_token_iv: refresh.iv, p_refresh_token_tag: refresh.tag,
+    p_token_expires_at: candidate.tokenExpiresAt, p_encryption_version: access.version,
+  });
+  if (error || data !== candidate.connectionId) throw new GoogleConnectionStorageUnavailableError();
 }
 
 export async function disconnectGoogleConnection(connectionId: string): Promise<void> {
