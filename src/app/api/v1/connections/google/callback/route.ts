@@ -25,6 +25,7 @@ export const runtime = "nodejs";
 type CallbackResult =
   | "connected"
   | "drive_connected"
+  | "calendar_connected"
   | "denied"
   | "invalid_state"
   | "oauth_failed"
@@ -79,11 +80,11 @@ export async function GET(request: NextRequest) {
     if (!code) return finish("oauth_failed");
 
     const current = await getGoogleOAuthConnection(user.id);
-    if (context.purpose === "drive_scope_upgrade" && (!current || current.status !== "connected"
+    if (context.purpose !== "connect" && (!current || current.status !== "connected"
       || current.id !== context.connectionId || current.provider_account_id !== context.accountId
       || current.updated_at !== context.connectionUpdatedAt)) return finish("storage_unavailable");
     const tokens = await exchangeGoogleAuthorizationCode(config, code, context.purpose, current?.scopes ?? []);
-    if (context.purpose === "drive_scope_upgrade" && current && context.connectionUpdatedAt) {
+    if (context.purpose !== "connect" && current && context.connectionUpdatedAt) {
       const identity = await fetchGoogleIdentity(tokens.accessToken);
       if (identity.providerAccountId !== context.accountId) return finish("profile_failed");
       const saved = await getGoogleConnectionTokens(user.id, current.id);
@@ -92,19 +93,19 @@ export async function GET(request: NextRequest) {
       const refreshToken = tokens.refreshToken ?? saved.refreshToken;
       if (!refreshToken) return finish("storage_unavailable");
       const refreshed = await refreshGoogleAccessToken(refreshToken, tokens.scopes, true);
-      const scopes = validateGrantedScopes((refreshed.scopes ?? []).join(" "), "drive_scope_upgrade", current.scopes);
+      const scopes = validateGrantedScopes((refreshed.scopes ?? []).join(" "), context.purpose, current.scopes);
       const [refreshedIdentity, gmail] = await Promise.all([
         fetchGoogleIdentity(refreshed.accessToken), fetchGmailProfile(refreshed.accessToken),
       ]);
       if (refreshedIdentity.providerAccountId !== context.accountId
         || refreshedIdentity.email.toLowerCase() !== gmail.emailAddress.toLowerCase()) return finish("profile_failed");
       await persistGoogleScopeUpgrade({
-        userId: user.id, connectionId: current.id, providerAccountId: identity.providerAccountId,
+        purpose: context.purpose, userId: user.id, connectionId: current.id, providerAccountId: identity.providerAccountId,
         accountEmail: refreshedIdentity.email, scopes, accessToken: refreshed.accessToken,
         refreshToken: refreshed.refreshToken ?? refreshToken, tokenExpiresAt: refreshed.tokenExpiresAt,
         expectedConnectionUpdatedAt: context.connectionUpdatedAt, expectedAccessTokenCiphertext: saved.accessTokenCiphertext,
       });
-      return finish("drive_connected");
+      return finish(context.purpose === "calendar_scope_upgrade" ? "calendar_connected" : "drive_connected");
     }
     const [identity, gmailProfile] = await Promise.all([
       fetchGoogleIdentity(tokens.accessToken),

@@ -12,6 +12,7 @@ export async function GET() {
             status: connection.status,
             accountEmail: connection.accountEmail,
             lastSyncedAt: connection.lastSyncedAt,
+            capabilities: connection.capabilities,
           }
         : null,
     });

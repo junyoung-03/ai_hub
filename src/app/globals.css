@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -48,24 +48,24 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: #f7f8fb;
+  --foreground: #242735;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: #5146bc;
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --muted-foreground: #636879;
+  --accent: #eeedf9;
+  --accent-foreground: #5146bc;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
+  --border: #e3e5ed;
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: #6f63ca;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -122,5 +122,23 @@
 
   body {
     @apply bg-background font-sans text-foreground;
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
   }
+  h2 { font-size: 20px; font-weight: 600; line-height: 1.4; }
+  h3 { font-size: 18px; font-weight: 600; }
+  input, select, textarea { min-width: 0; max-width: 100%; }
+  button, a, input, select, textarea { @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+  ::selection { background: #e3dff8; }
+}
+
+@layer components {
+  .panel { @apply min-w-0 rounded-xl border bg-card p-5 md:p-7; }
+  .btn-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50; }
+  .btn-secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border bg-card px-4 text-sm font-medium hover:bg-accent disabled:opacity-50; }
+  .field { @apply min-h-11 w-full rounded-lg border bg-card px-3 py-2 text-[15px]; }
+  .meta { @apply text-[13px] text-muted-foreground; }
 }

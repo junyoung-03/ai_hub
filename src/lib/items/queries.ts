@@ -1,4 +1,6 @@
 import "server-only";
+import { calendarDetail } from "@/lib/google/calendar-contract";
+import { uploadDetail } from "@/lib/uploads/contract";
 
 import { requireUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -152,6 +154,8 @@ export async function getItemDetail(itemId: string): Promise<ItemDetailResponse 
   const effective = effectiveClassification(classification);
   return {
     item: { id: item.id, title: item.title, source: item.source, format: item.format, processingStatus: item.processing_status, createdAt: item.created_at, updatedAt: item.updated_at, contentText: item.content_text, sourceCreatedAt: item.source_created_at },
+    calendar: item.source === "calendar" ? calendarDetail(item.metadata) : null,
+    upload: item.source === "upload" ? uploadDetail(item.metadata) : null,
     gmail: item.source === "gmail" ? { from: mailHeader("from"), to: mailHeader("to"), cc: mailHeader("cc"), bcc: mailHeader("bcc"), dateHeader: mailHeader("date") } : null,
     classification: effective, effectiveClassification: effective,
     aiClassification: classification ? { primaryTopic: classification.ai_primary_topic,

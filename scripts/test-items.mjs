@@ -20,6 +20,7 @@ function load(path, dependencies = {}) {
     require(name) {
       if (name === "server-only") return {};
       if (name in dependencies) return dependencies[name];
+      if (name === "@/lib/uploads/ocr-contract") return load("src/lib/uploads/ocr-contract.ts");
       if (name === "node:crypto") return crypto;
       if (name === "next/server") return require(name);
       throw new Error(`Unexpected dependency: ${name}`);
@@ -30,6 +31,7 @@ function load(path, dependencies = {}) {
 const database = load("src/types/database.ts");
 const filters = load("src/lib/items/filters.ts", { "@/types/database": database });
 const presentation = load("src/lib/items/presentation.ts");
+const calendarContract = load("src/lib/google/calendar-contract.ts");
 // Local v0.2 validation only. Importing a Gemini client would fail this harness.
 const validation = loadAnalysisModule("src/lib/gemini/validation.ts");
 const classify = {
@@ -62,6 +64,8 @@ function queries(responses, authorized = true) {
   const queryModule = load("src/lib/items/queries.ts", {
     "@/lib/supabase/auth": auth, "@/lib/supabase/server": { async createClient() { return client; } },
     "@/lib/items/filters": filters, "@/lib/items/presentation": presentation,
+    "@/lib/google/calendar-contract": calendarContract,
+    "@/lib/uploads/contract": load("src/lib/uploads/contract.ts"),
     "@/lib/gemini/validation": validation,
   });
   return { queryModule, calls, auth, checks: () => authChecks };
@@ -197,9 +201,30 @@ test("Gmail Detail exposes only approved headers/source date; private metadata s
   ]);
   const result = await queryModule.getItemDetail(id);
   assert.equal(result.gmail.from, "fixture@example.invalid");
+  assert.equal(result.calendar, null);
   assert.equal(result.item.sourceCreatedAt, time);
   assert.ok(!JSON.stringify(result).includes("private-secret-marker"));
   assert.ok(!JSON.stringify(result).includes("private-source-id"));
+});
+
+test("Calendar Detail GET projects original date fields only without creating AI/Action data", async () => {
+  const metadata = { calendar: { calendarId: "primary", extractionVersion: "calendar-text-v1", status: "cancelled", eventType: "default",
+    start: { date: "2026-10-05", secret: "private-secret-marker" }, end: { date: "2026-10-07" },
+    calendarTimezone: "Asia/Seoul", eventTimezone: null, allDay: true, endTimeUnspecified: false,
+    location: "Synthetic room", recurringEventId: "master1", originalStartTime: { date: "2026-10-05" },
+    attendees: [{ email: "private-secret-marker" }], credentials: "private-secret-marker" }, raw: "private-secret-marker" };
+  const { queryModule, calls } = queries([
+    { data: { id, title: "Synthetic event", source: "calendar", format: "calendar_event", processing_status: "queued",
+      created_at: time, updated_at: time, content_text: "Synthetic text", original_url: "https://calendar.google.com/calendar/event?eid=synthetic", metadata } },
+    { data: null }, { data: [] },
+  ]);
+  const result = await queryModule.getItemDetail(id);
+  assert.equal(result.calendar.start.date, "2026-10-05"); assert.equal(result.calendar.end.date, "2026-10-07");
+  assert.equal(result.calendar.status, "cancelled"); assert.equal(result.calendar.allDay, true);
+  assert.equal(result.gmail, null); assert.equal(result.aiAnalysis, null); assert.equal(result.eventObservations.length, 0);
+  assert.equal(result.actions.length, 0); assert.equal(result.evidence.length, 0);
+  assert.ok(!JSON.stringify(result).includes("private-secret-marker"));
+  for (const call of calls) assert.equal(call.searchParams.get("user_id"), "eq.owner-fixture");
 });
 
 test("database errors do not leak provider details; external URLs allow HTTP(S) only without credentials", async () => {
@@ -234,6 +259,14 @@ const detailItem = {
   id, title: "Synthetic subject", source: "gmail", format: "email", processing_status: "indexing",
   created_at: time, updated_at: time, source_created_at: time, content_text: "행사일은 2026-10-20입니다.", original_url: null,
 };
+test("Upload Detail uses existing owner read path with safe page map and no private metadata",async()=>{
+  const uploadContract=load("src/lib/uploads/contract.ts"),extraction=uploadContract.assemble([{text:"Synthetic text",method:"ocr",confidence:0.01}]);
+  const item={...detailItem,source:"upload",format:"image",processing_status:"queued",content_text:extraction.text,metadata:{secret:"private-upload-marker",upload:{rawHash:"private-upload-marker",storagePath:"private-upload-marker",extraction:{...extraction,rawResponse:"private-upload-marker"}}}};
+  const {queryModule}=queries([{data:item},{data:null},{data:[]}]);const result=await queryModule.getItemDetail(id);
+  assert.equal(result.upload.extractionStatus,"complete");assert.equal(result.upload.pages[0].end,14);
+  assert.equal(result.original.url,null);assert.equal(result.original.previewType,"upload");assert.equal(result.actions.length,0);assert.equal(result.aiAnalysis,null);
+  assert.ok(!JSON.stringify(result).includes("private-upload-marker"));
+});
 const detailAction = {
   id: actionId, title: "신청하세요", action_type: "optional", status: "completed",
   deadline_status: "confirmed", deadline_date: "2026-10-15", deadline_at: "2026-10-15T18:00:00+09:00",

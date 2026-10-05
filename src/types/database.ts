@@ -371,6 +371,11 @@ export type Database = {
           created_at: string
           embedding: string | null
           embedding_model: string | null
+          embedding_version: string
+          content_hash: string | null
+          input_hash: string | null
+          index_fingerprint: string | null
+          metadata: Json
           id: string
           item_id: string | null
           updated_at: string
@@ -384,6 +389,11 @@ export type Database = {
           created_at?: string
           embedding?: string | null
           embedding_model?: string | null
+          embedding_version?: string
+          content_hash?: string | null
+          input_hash?: string | null
+          index_fingerprint?: string | null
+          metadata?: Json
           id?: string
           item_id?: string | null
           updated_at?: string
@@ -397,6 +407,11 @@ export type Database = {
           created_at?: string
           embedding?: string | null
           embedding_model?: string | null
+          embedding_version?: string
+          content_hash?: string | null
+          input_hash?: string | null
+          index_fingerprint?: string | null
+          metadata?: Json
           id?: string
           item_id?: string | null
           updated_at?: string
@@ -455,6 +470,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      upload_session_rpc: {
+        Args: { p_operation: string; p_user_id: string; p_upload_id: string | null; p_key: string | null; p_request: Json | null; p_payload: Json | null; p_attempt: string | null }
+        Returns: Json
+      }
+      upload_cleanup_candidates: {
+        Args: Record<string, never>
+        Returns: Json
+      }
       assert_action_evidence: {
         Args: { p_action_id: string; p_user_id: string }
         Returns: undefined
@@ -503,6 +526,26 @@ export type Database = {
           p_expected_item_updated_at: string | null
         }
         Returns: Json
+      }
+      persist_calendar_item: {
+        Args: {
+          p_user_id: string
+          p_connection_id: string
+          p_event_id: string
+          p_title: string
+          p_original_url: string | null
+          p_content_text: string
+          p_content_hash: string
+          p_source_created_at: string | null
+          p_source_updated_at: string | null
+          p_calendar_metadata: Json
+          p_expected_item_updated_at: string | null
+        }
+        Returns: Json
+      }
+      upgrade_google_calendar_scopes: {
+        Args: Database["public"]["Functions"]["upgrade_google_connection_scopes"]["Args"]
+        Returns: string
       }
       refresh_google_connection_tokens: {
         Args: {

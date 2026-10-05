@@ -116,8 +116,8 @@ export function safeOriginalUrl(value: string | null): string | null {
 export function formatTimestamp(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "날짜 확인 필요" : new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "medium", timeStyle: "short", timeZone: "UTC",
-  }).format(date) + " UTC";
+    dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Seoul",
+  }).format(date) + " KST";
 }
 
 /** Display only locator fields, never arbitrary metadata or HTML. */

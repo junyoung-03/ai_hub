@@ -9,7 +9,9 @@ export const DRIVE_DOCS_SCOPES = [
   "https://www.googleapis.com/auth/drive.metadata.readonly",
   "https://www.googleapis.com/auth/documents.readonly",
 ] as const;
-export type GoogleOAuthPurpose = "connect" | "drive_scope_upgrade";
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.owned.readonly";
+export type GoogleOAuthPurpose = "connect" | "drive_scope_upgrade" | "calendar_scope_upgrade";
+const dataCapability = (scope: string) => scope === GMAIL_READONLY_SCOPE || scope === CALENDAR_SCOPE || DRIVE_DOCS_SCOPES.includes(scope as typeof DRIVE_DOCS_SCOPES[number]);
 
 export const GOOGLE_DATA_SCOPES = [
   "openid",
@@ -21,6 +23,7 @@ export const GOOGLE_DATA_SCOPES = [
 const ALLOWED_GRANTED_SCOPES = new Set([
   ...GOOGLE_DATA_SCOPES,
   ...DRIVE_DOCS_SCOPES,
+  CALENDAR_SCOPE,
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
 ]);
@@ -103,7 +106,8 @@ export function createGoogleAuthorizationUrl(config: GoogleDataOAuthConfig, stat
     redirect_uri: config.redirectUri,
     response_type: "code",
     scope: [...new Set([...GOOGLE_DATA_SCOPES, ...(purpose === "drive_scope_upgrade" ? DRIVE_DOCS_SCOPES : []),
-      ...preservedScopes.filter((scope) => DRIVE_DOCS_SCOPES.includes(scope as typeof DRIVE_DOCS_SCOPES[number]))])].join(" "),
+      ...(purpose === "calendar_scope_upgrade" ? [CALENDAR_SCOPE] : []),
+      ...preservedScopes.filter(dataCapability)])].join(" "),
     access_type: "offline",
     prompt: "consent select_account",
     state,
@@ -130,8 +134,9 @@ export function validateGrantedScopes(rawScope: string, purpose: GoogleOAuthPurp
   if (
     !scopes.includes(GMAIL_READONLY_SCOPE) ||
     (purpose === "drive_scope_upgrade" && DRIVE_DOCS_SCOPES.some((scope) => !scopes.includes(scope))) ||
+    (purpose === "calendar_scope_upgrade" && !scopes.includes(CALENDAR_SCOPE)) ||
     (DRIVE_DOCS_SCOPES.some((scope) => scopes.includes(scope)) && DRIVE_DOCS_SCOPES.some((scope) => !scopes.includes(scope))) ||
-    preservedScopes.filter((scope) => scope === GMAIL_READONLY_SCOPE || DRIVE_DOCS_SCOPES.includes(scope as typeof DRIVE_DOCS_SCOPES[number]))
+    preservedScopes.filter(dataCapability)
       .some((scope) => !scopes.includes(scope)) ||
     scopes.some((scope) => !ALLOWED_GRANTED_SCOPES.has(scope))
   ) {

@@ -72,6 +72,8 @@ try {
         throw new Error("Same-version reuse failed.");
       const filters = load("src/lib/items/filters.ts", { "@/types/database": load("src/types/database.ts") });
       const queryImports = {
+        "@/lib/google/calendar-contract": load("src/lib/google/calendar-contract.ts"),
+        "@/lib/uploads/contract": load("src/lib/uploads/contract.ts"),
         "@/lib/supabase/auth": context.auth, "@/lib/supabase/server": context.server, "@/lib/items/filters": filters,
         "@/lib/items/presentation": load("src/lib/items/presentation.ts"),
         "@/lib/gemini/validation": loadAnalysisModule("src/lib/gemini/validation.ts"),

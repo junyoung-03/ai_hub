@@ -11,6 +11,7 @@ export type GoogleConnectionSummary = {
   status: "connected" | "disconnected" | "error";
   accountEmail: string | null;
   lastSyncedAt: string | null;
+  capabilities: { gmail: boolean; drive: boolean; calendar: boolean };
 };
 
 export type GoogleConnectionCandidate = {
@@ -44,7 +45,7 @@ export async function getGoogleConnectionSummary(userId: string): Promise<Google
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("connections")
-    .select("id,status,account_email,last_synced_at")
+    .select("id,status,account_email,last_synced_at,scopes")
     .eq("user_id", userId)
     .eq("provider", "google")
     .order("updated_at", { ascending: false })
@@ -59,6 +60,11 @@ export async function getGoogleConnectionSummary(userId: string): Promise<Google
         status: connection.status,
         accountEmail: connection.account_email,
         lastSyncedAt: connection.last_synced_at,
+        capabilities: {
+          gmail: connection.scopes.includes("https://www.googleapis.com/auth/gmail.readonly"),
+          drive: ["https://www.googleapis.com/auth/drive.metadata.readonly", "https://www.googleapis.com/auth/documents.readonly"].every(scope => connection.scopes.includes(scope)),
+          calendar: connection.scopes.includes("https://www.googleapis.com/auth/calendar.events.owned.readonly"),
+        },
       }
     : null;
 }
@@ -178,19 +184,20 @@ export async function refreshGoogleConnectionTokens(
 /** Scope upgrade uses a separate narrow RPC; it cannot create or reconnect an account. */
 export async function persistGoogleScopeUpgrade(candidate: Omit<GoogleConnectionCandidate, "gmailHistoryId"> & {
   connectionId: string; expectedConnectionUpdatedAt: string; expectedAccessTokenCiphertext: string;
+  purpose?: "drive_scope_upgrade" | "calendar_scope_upgrade";
 }) {
   await verifyOwner(candidate.userId);
   const current = await getGoogleOAuthConnection(candidate.userId);
   if (!current || current.id !== candidate.connectionId || current.status !== "connected"
     || current.provider_account_id !== candidate.providerAccountId || current.updated_at !== candidate.expectedConnectionUpdatedAt)
     throw new GoogleConnectionStorageUnavailableError();
-  const scopes = validateGrantedScopes(candidate.scopes.join(" "), "drive_scope_upgrade", current.scopes);
+  const scopes = validateGrantedScopes(candidate.scopes.join(" "), candidate.purpose ?? "drive_scope_upgrade", current.scopes);
   const key = getGoogleTokenEncryptionKey();
   const access = sealGoogleToken(candidate.accessToken, tokenContext(candidate.userId, candidate.providerAccountId, "access"), key);
   // Callback always verifies a concrete refresh token before saving an upgrade.
   if (!candidate.refreshToken) throw new GoogleConnectionStorageUnavailableError();
   const refresh = sealGoogleToken(candidate.refreshToken, tokenContext(candidate.userId, candidate.providerAccountId, "refresh"), key);
-  const { data, error } = await createAdminClient().rpc("upgrade_google_connection_scopes", {
+  const { data, error } = await createAdminClient().rpc(candidate.purpose === "calendar_scope_upgrade" ? "upgrade_google_calendar_scopes" : "upgrade_google_connection_scopes", {
     p_user_id: candidate.userId, p_connection_id: candidate.connectionId,
     p_provider_account_id: candidate.providerAccountId, p_account_email: candidate.accountEmail, p_scopes: scopes,
     p_expected_connection_updated_at: candidate.expectedConnectionUpdatedAt,

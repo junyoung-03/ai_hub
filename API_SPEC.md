@@ -237,11 +237,17 @@ Response:
 ```json
 {
   "uploadId": "uuid",
-  "storagePath": "user-id/uuid/등록금안내.pdf",
+  "storagePath": "user-id/uuid/original.pdf",
   "signedUploadUrl": "...",
-  "expiresAt": "..."
+  "expiresAt": "...",
+  "completeBefore": "..."
 }
 ```
+
+`Idempotency-Key` UUID가 필수다. 서버 생성 upload UUID 및 사용자별 요청 fingerprint를 사용한다.
+같은 key·동일 요청은 같은 session, 다른 요청은 409. Signed upload token은 2시간, 논리 complete 기한은 15분이다.
+원본 filename은 표시용 title/session metadata에만 쓰며 경로에는 넣지 않는다. 완료 ITEM이 있으면
+토큰을 새로 발급하지 않고 `{uploadId,itemId,state}`를 반환한다.
 
 서버 검증:
 
@@ -1071,3 +1077,207 @@ downloadedTextBytes는 크기 검증을 통과한 지원 본문 UTF-8 합계이�
 따라서 실패 문서를 반복 읽어 quota를 우회하지 않으며, 이 보수적 차감량을 downloadedTextBytes의 실제 추출량으로 표시하지 않는다.
 JSON 응답은 8 MB transport guard를 적용하고 넘으면 DOCUMENT_LIMIT로 저장 차단한다. 본문을 잘라 저장하지 않는다.
 실행 중 120초 cooperative deadline, route maxDuration=150초(auth/응답 여유). 실제 배포 플랜/Fluid 설정은 배포 전 확인한다.
+
+## 25. Calendar-2 — 승인된 수집 / Detail 계약 (2026-10-05)
+
+Calendar-1 승인에 따라 구현한 계약이다. Calendar-2는 실제 Google 동의·Event 수집·개발 DB Migration 적용을 수행하지 않는다.
+제품 범위/수집 제한/날짜 의미는 SPEC.md 36절을 따른다. Calendar-3는 별도 승인 후 실제 검증한다.
+
+### Data OAuth
+
+기존 `POST /api/v1/connections/google/authorize`에 `{"purpose":"calendar_scope_upgrade"}`를 추가한다.
+body의 추가 필드·임의 Scope·credential은 거절한다. 기존 connect/drive_scope_upgrade 및 서비스 로그인은 유지한다.
+calendar.events.owned.readonly를 추가하고 기존 granted Gmail/Drive/Docs/Calendar 권한을 보존한다.
+동일 Google sub/서명 state의 연결 수정시각/실제 scope/refresh 가능성을 검증하여 전용 upgrade RPC로 원자 저장한다.
+callback 성공 redirect는 `/settings?connection=calendar_connected`이다. 새 UI/컴포넌트는 추가하지 않는다.
+다른 계정/부분 동의/축소/거절/stale 상태/refresh 또는 저장 실패는 기존 저장 bundle과 checkpoint를 변경하지 않는다.
+일반 connect 및 기존 Drive upgrade도 이전 Calendar 권한을 요청·검증하여 축소를 차단한다.
+
+### POST /api/v1/connections/google/calendar/collect
+
+인증된 현재 사용자, 같은 origin, 활성 단일 Google Data 연결만 허용한다. body는 없음 또는 빈 객체 `{}`만 허용한다.
+body 상한 64 bytes. userId/calendarId/timeMin/timeMax/query/scope/credential 등 어떤 추가 필드도 허용하지 않는다.
+서버가 primary/고정 기간/필터/페이지 정책을 정한다. 자동 AI/Action/Deadline/Classifications 생성은 없다.
+
+응답은 기존 connectionResponse envelope/cache 정책을 사용하며 다음 count/상태만 반환한다:
+created/updated/reused/skipped/failed/unprocessed:number, complete/capped:boolean,
+stopReason:EVENT_LIMIT|PAGE_LIMIT|RUN_BYTES_LIMIT|RUN_TIMEOUT|LIST_FAILED|null, pagesRead:number, requestId:string.
+Event ID/ITEM ID/제목/본문/raw provider response/metadata/token/secret는 수집 응답에 포함하지 않는다.
+skipped는 처음 보는 취소·제외 유형/master·동일 실행 중복을 포함한다. failed는 validation/순서 불명확/CAS/개별 조회/저장 실패를 포함한다.
+unprocessed는 이미 조회한 페이지에서 실행 timeout/텍스트 상한으로 처리하지 못한 개수다. 아직 조회하지 않은 Event 수를 추정하지 않는다.
+complete=true는 고정 기간 내 이번 페이지 조회 및 처리 완료이며 전체 Calendar 동기화 완료를 의미하지 않는다.
+빈 페이지도 nextPageToken이 있으면 다음 페이지로 진행한다. 목록 실패 후 이전에 저장한 ITEM을 rollback하지 않고 부분 결과를 반환한다.
+정상 동일 버전 reuse도 서버 저장 RPC로 active connection/권한을 확인하지만 DB UPDATE는 하지 않는다.
+
+오류: 401 세션/refresh 실패, 403 origin 불일치, 400 입력 오류, 409 연결/Calendar 추가 동의 필요,
+502 Google/초기 client 실패, 500 내부 오류. 내부 raw error/credential은 반환하지 않는다.
+신규 함수 Migration이 원격에 아직 없어 저장할 수 없는 상태는 성공으로 표시하지 않는다.
+
+### GET /api/v1/items/{itemId}
+
+기존 계약을 유지하며 `calendar: CalendarDetail|null`을 추가한다. Calendar source의 검증된 metadata에만 객체를 반환한다.
+다른 Source 또는 invalid/missing metadata는 null이다. 기존 session client/user ownership/RLS 읽기 경계를 유지한다.
+
+CalendarDetail의 허용 필드:
+status:confirmed|tentative|cancelled, eventType:default,
+start/end: `{date:YYYY-MM-DD,timeZone?:string}` 또는 `{dateTime:RFC3339,timeZone?:string}` 또는 null,
+allDay:boolean|null, eventTimezone:string|null, calendarTimezone:string,
+endTimeUnspecified:boolean, location:string, recurringEventId:string|null, originalStartTime:CalendarDate|null.
+중첩 date도 whitelist로 재구성한다. raw metadata 전체, credentials, etag, 기타 미승인 중첩 필드는 반환하지 않는다.
+all-day의 배타적 end date와 원본 offset/timezone을 보존한다. 취소된 ITEM의 보존 날짜는 마지막 정상 원본 값이며 현재 확정 예정일을 의미하지 않는다.
+calendar는 AI eventObservations와 별개이고 GET에서 Action/Deadline/AI 분석을 생성하지 않는다.
+
+### 저장 RPC / 적용 전 조건
+
+`upgrade_google_calendar_scopes`와 `persist_calendar_item`은 service_role 전용 SECURITY DEFINER/빈 search_path 함수다.
+Scope Migration은 기존 upsert allowlist/축소 방지/상한만 확장하며 새 Calendar upgrade로 전체 sync_state/connected_at/last_synced_at을 보존한다.
+저장 Migration은 새 Calendar 함수만 포함한다. 기존 table/column/index/RLS와 기존 Migration을 수정하지 않는다.
+함수 입력·owner/연결/Scope/Token·Calendar identity·hash/날짜/허용 metadata·CAS/버전 순서를 서버와 DB에서 검증한다.
+권한 및 SQL 구문/격리 검증 결과는 PROJECT_STATE에 기록한다. 실제 개발 DB 실행/RLS/동시성 검증을 대체하지 않는다.
+Calendar-3 승인 후 두 함수 Migration은 ai-hub-dev에 적용했다. 실제 RPC/RLS 및 OAuth/Event 1건/조회/회귀 결과와
+CLI adapter·Browser collect HTTP 미검증 경계는 docs/PROJECT_STATE.md 10절을 따른다. API 계약 변경은 없다.
+
+
+# 24. 승인된 Upload-1/2/3 서버 계약 (2026-10-05)
+
+세 단계만 사용한다: Upload-1 기준 COMPLETE → Upload-2 구현 → Upload-3 실제 PDF/이미지 E2E 및 최종 회귀.
+이 절은 사용자가 승인한 직접 업로드 정책을 구체화한다. 새 UI/UX·직접 Text 입력은 이번 범위가 아니다.
+
+- `POST /api/v1/uploads`: 정확히 `{fileName,mimeType,size}` 1파일, UUID Idempotency-Key, 201.
+  같은 origin/로그인 사용자 필수. owner/path/status/hash 클라이언트 지정 금지.
+- `POST /api/v1/uploads/{uploadId}/prepare`: 빈 body 또는 `{}`만 허용(64B), 202.
+  owner/session 확인 → reserve → private 원본 download/size/signature/decode/구조 검증/SHA256 → pending/dedupe.
+  OCR 없는 text PDF는 서버 embedded 결과로 완료하며 기존 완료 응답을 반환한다.
+  OCR 필요 시 lease release 후 `{uploadId,itemId,state:stored,mime,pages:[{page,method}],downloadUrl}`.
+  downloadUrl은 본인 검증된 ITEM의 60초 signed original이며 DB/로그/localStorage에 저장하지 않는다.
+  embedded text/raw hash/raster payload는 prepare 응답에 포함하지 않는다.
+- `POST /api/v1/uploads/{uploadId}/complete`: 정확히 `{pages:[{page,text,provider,providerVersion,execution,language,confidence}]}`.
+  현재 allowlist는 tesseract.js/7.0.0/client/kor+eng. confidence=null 또는 유한한 0~1 참고값.
+  origin/JSON 실제 byte 상한 2,500,000B, 합계 100,000CP/400,000UTF8B. malformed/control/빈 OCR/추가 필드 차단.
+  required OCR page 집합과 제출 page 집합 일치(누락/중복/추가/embedded 제출 금지).
+  서버는 원본/plan/hash를 재검증하고 normalize/NFC/range/hash를 재계산한 뒤 새 attempt/CAS로 저장한다.
+  입력 검증 실패는 claim 전에 거절/lease release; 유효 결과 저장 실패는 matching attempt 실패 경로 사용. 202.
+  기존 `item:{id,source,format,processingStatus}`와 `itemId,outcome:created|reused,state`를 반환한다.
+  처리는 동기 완료이며 마지막 queued는 AI 분석 대기다. 완료 응답 유실 후 재시도는 ITEM을 재사용한다.
+- `GET /api/v1/items/{itemId}/original`: 본인 upload ITEM/검증된 canonical path를 cookie RLS로 조회한 뒤
+  `{downloadUrl,expiresAt}` 60초 signed URL, private no-store. original_url은 계속 NULL이다.
+- 상태는 기존 Detail GET: `upload:{version,extractionStatus,pages,error}` nullable whitelist만 추가.
+  pages는 `{page,start,end,method,provider,providerVersion,execution,language,extractionVersion,confidence}`;
+  PDF page 1-based/최종 text code point 0-based end-exclusive.
+  이미지 1page 전체 OCR 범위. raw hash/path/session/raw OCR/credential은 Detail에 노출하지 않는다.
+
+지원 MIME는 application/pdf, image/png, image/jpeg이며 extension+MIME+signature+실제 parser/decoder 모두 일치해야 한다.
+5,000,000B/10PDF pages/20MP/side10,000px/서버1파일 동시처리/100,000CP/400,000UTF8B/서버 요청 전체120초.
+브라우저 OCR은 단일 Worker/페이지 순차 처리이며 초기화 각 단계 및 페이지 job timeout 120초, cancel 시 즉시 terminate.
+text PDF는 서버 PDF.js embedded 우선, text 없는 스캔 page만 browser render + Tesseract.js, mixed는 페이지별 처리한다.
+confidence threshold 삭제 없음. 암호화/손상 자동복구/active content/embedded files/외부 resource 접근 금지.
+교차 참조 스트림 및 같은 page의 text+raster/불확실 text 순서는 PDF_LAYOUT_NEEDS_REVIEW;
+incremental/hybrid references는 안전 검토 전 거부한다. 이 보수적 parser 제한은 정상 결과의 일부 누락을 방지한다.
+
+비공개 upload-originals의 `{userId}/{uploadUuid}/original.{pdf|png|jpg}` 경로만 사용하고 overwrite/public URL 없음.
+source=upload, format=pdf|image, connection/container/originalURL=NULL, external_id=upload UUID.
+사용자별 원본 bytes SHA256 dedupe, 추출 content_text SHA256은 별도 content_hash.
+세션→signed upload→Storage→실제 검증→pending ITEM→추출/OCR→원자 finish.
+Storage I/O 중 DB transaction 없음. global reservation은 서버 요청 동안만 유지하고 browser OCR 대기에는 lease가 없다.
+attempt/lease/ITEM timestamp CAS는 stale finish 차단. 만료 running은 snapshot 일치 시만 실패 복구하고 새 attempt를 획득한다.
+extraction/저장 실패는 부분 text 없이 failed; 조작/누락 입력은 claim 전 거절해 재시도 가능 상태를 보존한다.
+탭 종료/브라우저 OCR 실패는 서버의 즉시 failed 판정이 아니다. owner session 재prepare 후 OCR 전체 재시도.
+15분 기한은 아직 pending인 원본 업로드/prepare에 적용한다. 이미 ITEM에 연결된 stored/failed session은 owner 재시도 가능.
+uploaded→queued→extracting→queued, metadata.upload.extraction.status=pending|running|complete|failed.
+세션 기한과 서명 토큰 만료 이후 2h15 안전 window·ITEM 무참조·inactive lease 조건의 orphan 정리만 지원한다.
+
+안전 오류 code만 반환한다: 401 UNAUTHORIZED, 403 FORBIDDEN, 404 ITEM_NOT_FOUND,
+409 IDEMPOTENCY_CONFLICT/UPLOAD_IN_PROGRESS/STALE_ATTEMPT, 410 UPLOAD_EXPIRED,
+503 STORAGE_UNAVAILABLE/WORKER_UNAVAILABLE/OCR_UNAVAILABLE, 기타 validation/parser/OCR 오류 422.
+provider body/secret/filename/text/signed URL을 오류·로그에 담지 않는다.
+
+metadata.upload.extraction은 method/provider/providerVersion/execution/language/extractionVersion을 가진다.
+embedded/pdfjs/6.4.299/server/null 또는 ocr/tesseract.js/7.0.0/client/kor+eng만 새 저장에서 허용한다.
+mixed root는 method/provider/providerVersion/execution=mixed, language=kor+eng이며 정확한 origin은 page별로 남긴다.
+version=upload-text-v1은 기존 소비자 호환을 위해 extractionVersion과 함께 유지한다.
+confidence/providerVersion은 client reported 참고값이고 서버가 실제 브라우저 engine 실행을 증명하지 않는다.
+page locator는 추출 text 위치이며 원본과 OCR text의 의미 일치/원문 highlight를 보증하지 않는다.
+
+기존 Upload Migration/bucket/policy와 사용자 승인한 provider-neutral RPC Migration은 ai-hub-dev에 적용됐다.
+최소 실제 PDF/브라우저 이미지 OCR/ITEM/dedupe/소유권 검증 PASS. Vercel/Linux 및 모바일 성능은 후속 TODO.
+Cloud Vision/Cloud Run/Billing/OCR ADC는 MVP 제외, 기존 ADC 보존. Gemini/Classification/Action/Deadline/Embedding 실행 없음.
+
+## 25. 승인된 Search MVP API (Search-1 보완 / Search-2)
+
+이 절은 초기 10절의 answered/insufficient_evidence/Gemini Answer를 대체한다. 제품 기준은 SPEC.md 37절이다.
+
+### POST /api/v1/search
+
+Request: {query, filters?:{source?:item_source[], format?:item_format[], from?:YYYY-MM-DD|null, to?:YYYY-MM-DD|null}, limit?:number, semantic?:boolean, cursor?:string|null}.
+trim/NFC Query 1~500 code points, request 최대 16KiB, limit 기본 20/최대 50, semantic 기본 false다.
+userId/vector/embedding/provider/version/topic과 알 수 없는 필드는 거절한다.
+semantic=true는 Query 외부 전송 선택이다. 프론트는 Gemini Free Tier 조건을 사전에 표시한다.
+Unpaid Services는 입력·출력이 제품/ML 개선과 사람의 검토에 사용될 수 있으므로 민감·기밀·개인 Query를 보내지 않는다.
+[공식 데이터 사용 조건](https://ai.google.dev/gemini-api/terms#unpaid-services)과 SPEC 37절의 환경별 Paid/Unpaid 확인을 따른다.
+서버 disabled이면 keyword fallback/degraded이며 클라이언트 값으로 서버 정책을 변경하지 않는다.
+
+Response: {coverage:{scope:owner_corpus,totalItems,semanticIndexedItems}, status:results|no_results, intent:documents|actions, mode:keyword_only|hybrid|action_sql, degraded,
+results, limit, nextCursor, embeddingVersion, appliedFilters, timezone:Asia/Seoul, warning,
+semantic:{requested,querySentToProvider,provider,disclosure}, debounceMs:350, maxResults:200, truncated, retryAfter}.
+Cache hit는 querySentToProvider=false, 실제 실패 전송 시도는 true다. Cursor 페이지 info는 최초 실행 snapshot 정보다.
+
+ITEM 결과는 kind,itemId,title,source,format,score,matchType,excerpt,matchedChunks,detailUrl,originalUrl,
+originalEndpoint,sourceDate,sourceDateKind,calendar다. matchedChunks에는 chunkId/index(미색인 fallback은 null),
+excerpt,location(field,offsetUnit=unicode_code_point,startChar,endChar,page,tabId,method)을 반환한다.
+start/end는 0-based/end-exclusive, page는 1-based다. Full text/raw embedding/hash/내부 revision/전체 metadata는 반환하지 않는다.
+
+Action 결과는 kind=action,actionId,title,type,status,deadlineStatus,deadlineDate,deadlineAt,requirements,
+conditions,matchType=action_sql,score=0,sources[{itemId,title,source,format,text,location,originalUrl,detailUrl}]다.
+문서 relevance와 importance 점수는 합치지 않는다. 기간 검색은 실제 confirmed deadline/current Evidence만 사용한다.
+
+Pagination은 동일 query/filters/semantic/limit에 nextCursor를 넣는다. Snapshot TTL 5분/최대 200,
+HMAC에 session/offset/context/limit/version/만료를 결합한다. 타 사용자/query/version/tamper는 거절하고,
+만료는 410 CURSOR_EXPIRED로 재검색한다. 삽입은 기존 snapshot에 추가하지 않는다.
+변경·삭제 결과를 제거한 window를 다시 채우지 않으므로 빈 results에도 cursor가 있을 수 있다. 종료 기준은 nextCursor=null이다.
+Rate는 사용자 request 30/min, uncached document/query embedding 10/min, index 5/min이다. 429에는 Retry-After 초 단위를 반환한다.
+owner/query/effective filters/Asia/Seoul/embeddingVersion cache TTL 5분, 동시 lease 20초, cursor 페이지 Query Embedding 호출 0이다.
+응답은 private,no-store/X-Search-Debounce-Ms=350이다. 프론트는 350ms debounce/AbortController/Retry-After를 준수한다.
+서버 보안은 debounce에 의존하지 않는다.
+
+### POST /api/v1/items/{itemId}/index
+
+빈 body 또는 {retry?:boolean}. 본인 ITEM만, cycle 최대 8개 독립 chunk/동시 1/시간 예산 35초다.
+Semantic은 서버 enabled+비민감 ITEM allowlist로만 결정하며 client consent/provider/vector 입력은 금지한다.
+state=complete|pending|failed|skipped_limit, nextChunk/chunkCount/semantic/version은 상태별로 포함한다.
+Pending은 같은 endpoint로 resume한다. Transient retryAfter를 존중하고 최초 포함 3회로 제한한다.
+retry=true는 본인의 명시적인 수동 budget 초기화이며 index rate limit은 유지한다.
+
+### GET /api/v1/items/{itemId}/similar?limit=5
+
+limit 1~10, 다른 query/중복 limit은 거절한다. 본인 ITEM/같은 version의 최대 4개 대표 chunk로 비교하며 provider 호출은 0이다.
+Response: {status:results|not_indexed,embeddingVersion,results:[{itemId,title,source,format,score,detailUrl,originalUrl}]}.
+Keyword-only/pending은 not_indexed다. 자신을 제외하며 foreign와 없는 ITEM은 동일 404다.
+
+Auth 401, input 400, size 413, ITEM 404, lease/stale 409, cursor expiry 410, quota 429,
+config/provider/storage 503, invalid vector 502다. Provider raw body/Secret/개인 Query는 오류 로그에 출력하지 않는다.
+일반 Detail 조회의 기존 사용자 client 경계는 유지한다.
+
+Search-3 실제 dev E2E 및 비민감 기존 자료 회귀 PASS. 응답 coverage는 필터 결과 개수가 아닌 본인 전체 corpus다.
+semanticIndexedItems는 active version/current revision/완료 generation의 유효 vector가 있는 ITEM 수다.
+Coverage도 최초 결과 snapshot에 고정한다. 개인정보·자격증명 파생값은 API 응답/검증 비교에 포함하지 않는다.
+실제 검증 범위·Golden 결과는 docs/PROJECT_STATE.md 17절 및 docs/SEARCH_GOLDEN.md를 따른다.
+
+## 26. Polished UI 2.0 통합 범위 (2026-10-05)
+
+GET /api/v1/connections의 기존 google 요약에 다음 공개 필드를 추가한다.
+
+```json
+{"capabilities":{"gmail":true,"drive":true,"calendar":true}}
+```
+
+값은 소유 connection의 저장 granted scopes에서 계산한 권한 보유 여부다.
+Drive는 metadata.readonly와 documents.readonly 두 권한 모두 필요하다.
+권한 보유와 연결 status는 별개이며 disconnected/error에서는 수집 버튼을 활성화하지 않는다.
+raw scopes, token, ciphertext, sync_state는 이 응답에 추가하지 않는다.
+
+Frontend는 ITEM list/detail의 기존 session query, Search의 POST 결과 및 Similar GET,
+Google authorize/sync/drive collect/calendar collect/disconnect, Upload create/prepare/complete/original,
+기존 Gmail analyze를 연결한다. Search Action 결과는 open Action만 포함하므로 완료 목록을 주장하지 않는다.
+Classification/Action 조회는 기존 persisted 값만 사용하고 User Edited 값을 수정하지 않는다.
+설계된 Classification PATCH / Action status PATCH / 독립 Action GET / 삭제 route는 아직 존재하지 않는다.
+현 통합에서 새로운 DB schema/RPC/권한/Migration 변경은 없다.

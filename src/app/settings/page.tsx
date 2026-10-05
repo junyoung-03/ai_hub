@@ -12,6 +12,7 @@ const NOTICES: Record<string, string> = {
   storage_unavailable: "안전한 Token 저장소를 준비한 뒤 연결할 수 있습니다.",
   connected: "Google 메일 연결이 완료되었습니다.",
   drive_connected: "Google Drive/Docs 읽기 권한이 추가되었습니다. 파일 수집은 아직 실행하지 않습니다.",
+  calendar_connected: "Google Calendar 읽기 권한이 추가되었습니다.",
 };
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -22,7 +23,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const notice = result && Object.hasOwn(NOTICES, result) ? NOTICES[result] : null;
 
   return (
-    <AppShell title="Settings">
+    <AppShell title="설정 · 연결">
       <GoogleConnectionPanel connection={connection} notice={notice} />
     </AppShell>
   );

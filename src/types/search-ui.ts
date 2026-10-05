@@ -1,0 +1,6 @@
+/** Public search transport fields from API_SPEC §25 and serializeResult. */
+export type SearchLocation = { field: string; startChar: number | null; endChar: number | null; page: number | null; tabId: string | null; method: string | null; offsetUnit: string };
+export type SearchSource = { itemId: string; title: string; source: string; format: string; text: string; location: SearchLocation; detailUrl: string };
+export type SearchItemResult = { kind: "item"; itemId: string; title: string; source: string; format: string; sourceDate: string | null; sourceDateKind: string; excerpt: string; detailUrl: string; matchedChunks: { excerpt: string; location: SearchLocation }[] };
+export type SearchActionResult = { kind: "action"; actionId: string; title: string; type: string; status: string; deadlineStatus: string; deadlineDate: string | null; deadlineAt: string | null; requirements: string[]; conditions: string[]; sources: SearchSource[] };
+export type SearchPageResponse = { status: string; results: (SearchItemResult | SearchActionResult)[]; nextCursor: string | null; mode: string; degraded: boolean; warning: string | null; truncated: boolean; appliedFilters: { dateBasis: string; from: string | null; to: string | null }; coverage: { totalItems?: number; semanticIndexedItems?: number } };

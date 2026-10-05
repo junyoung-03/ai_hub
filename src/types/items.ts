@@ -81,6 +81,8 @@ export type AIAnalysis = {
 
 export type ItemDetailResponse = {
   item: Item;
+  calendar: import("@/types/calendar").CalendarDetail | null;
+  upload: import("@/types/uploads").UploadDetail | null;
   gmail: { from: string; to: string; cc: string; bcc: string; dateHeader: string } | null;
   /** Compatibility alias of effectiveClassification. */
   classification: EffectiveClassification;

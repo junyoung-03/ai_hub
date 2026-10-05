@@ -28,7 +28,7 @@ type TokenRpcDatabase = Omit<Database, "public"> & {
 };
 
 /** No cookie storage or user session can override this server credential. */
-export function createAdminClient() {
+export function createAdminClient(signal?: AbortSignal) {
   const { url } = getSupabaseConfig();
   const secret = process.env.SUPABASE_SECRET_KEY?.trim()
     || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -36,5 +36,6 @@ export function createAdminClient() {
 
   return createClient<TokenRpcDatabase>(url, secret, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    ...(signal ? { global: { fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : [])]) }) } } : {}),
   });
 }

@@ -1152,3 +1152,177 @@ Drive-3 승인 범위는 OAuth/Token 경계, Drive client, Docs 추출, ITEM 저
 ITEM table/column/index/RLS 변경 금지. persist_drive_item 함수 적용은 별도 승인 후 개발 DB에서만 진행한다.
 Drive-3 완료 후 멈추고 Calendar는 시작하지 않는다.
 Restricted Scope 상용화 검증 및 하위 폴더 탐색은 TODO. drive.file+Google Picker는 이번 MVP에서 구현하지 않는다.
+
+## 36. 승인된 Calendar MVP / Calendar-2 (2026-10-05)
+
+사용자 승인: Calendar-1 COMPLETE. Calendar-2는 OAuth/Scope, client, Event validation/ITEM 변환,
+collect API, Detail 원본 데이터 조회, 함수 Migration 초안, 외부 호출 없는 격리 검증을 구현한다.
+Calendar-3에서 별도 승인 후 실제 Scope 동의·개발 DB Migration 적용·Event 1~3건 E2E와 최종 회귀를 수행한다.
+Calendar 단계는 1/2/3만 사용한다. UI/UX, 자동 동기화, AI/Search/Embedding은 이번 구현 범위가 아니다.
+
+동일 Google Data 계정의 primary 한 개만, eventType=default 일반/초대 일정과 기간 내 recurring occurrence를 수집한다.
+공유/선택/생일/공휴일 별도 calendar 및 모든 비-default 유형은 제외한다. 일반 일정 제목을 보고 생일/공휴일을 추측하여 제외하지 않는다.
+실행 시작시각을 고정한 과거 30일~미래 90일, singleEvents=true/showDeleted=true/eventTypes=default를 사용한다.
+Google timeMin은 종료시각 하한, timeMax는 시작시각 상한이므로 기간과 겹치는 일정을 포함한다.
+pageSize 50/최대 4페이지/최대 200개(취소 포함), 빈 페이지의 nextPageToken도 처리한다.
+Google 요청 10초/실행 목표 120초/추가 fresh GET 최대 20건. Event당 100,000 code points AND 400,000 UTF-8 bytes,
+실행 canonical text 2,000,000 bytes 상한. 초과 시 truncate 없이 부분 결과를 구분한다. 배포 maxDuration 150 지원 여부는 실제 배포에서 확인한다.
+429/5xx/403 rateLimitExceeded만 추가 1회 retry, Retry-After 존중 및 대기 최대 1초. 일반 403/404/timeout/불명확 네트워크 오류는 retry하지 않는다.
+
+최소 Scope는 calendar.events.owned.readonly이며 Gmail/Drive metadata/Docs와 기존 identity Scope를 보존한다.
+calendar_scope_upgrade는 기존 연결/동일 Google sub/실제 granted scopes 및 refresh 가능성을 입증한 뒤 bundle을 교체한다.
+부분 승인/다른 계정/Scope 축소/stale callback/실패는 저장 차단. 일반 재연결과 기존 Drive upgrade에서도 Calendar 권한을 보존한다.
+서버 및 DB allowlist는 같은 9개 허용 문자열(identity alias 포함)이며 서비스 로그인은 변경하지 않는다.
+Calendar 추가 동의는 새 전용 upgrade_google_calendar_scopes RPC로 전체 sync_state와 Gmail/Drive checkpoint,
+last_synced_at/connected_at를 보존한다. 기존 guarded refresh와 disconnect 경계를 유지한다.
+OAuth Scope 등록/동의와 AI Hub Dev의 Google Calendar API 활성화는 별개이며 이번에는 실제 설정을 변경하지 않는다.
+
+Unified ITEM: source=calendar, format=calendar_event, external_container_id=primary(API alias), external_id=Google instance eventId.
+primary alias는 connection/Google 계정에 묶인 namespace이며 실제 calendar 고유 ID라고 표시하지 않는다.
+향후 선택 calendar 도입 시 alias/실제 ID의 중복 방지 계약을 먼저 결정한다. 현재 start는 identity로 사용하지 않는다.
+recurring master는 미저장, recurringEventId/originalStartTime은 관계 추적 metadata로 보존한다.
+title=summary 또는 빈 문자열. content_text는 제목→HTML에서 변환한 일반 텍스트 설명→장소→시작/배타적 종료→calendar timezone의 고정 canonical text.
+hash는 해당 UTF-8 text SHA-256, extractionVersion=calendar-text-v1. source_created_at/source_updated_at는 Google 값 또는 null,
+mime_type/storage_path=null, 신규 processing_status=queued. queued는 AI 호출이나 색인 완료를 뜻하지 않는다.
+Google Calendar HTTPS htmlLink만 검증하여 original_url로 사용하며 없거나 안전하지 않으면 null이다.
+metadata.calendar는 Event/date/status/etag/version/반복 참조만 whitelist로 저장한다. organizer/creator/attendees/conferenceData/
+attachments/reminders/extendedProperties를 요청/저장하지 않는다. 설명 자체에 포함된 개인정보 제거를 보장하는 정책은 아니다.
+
+Calendar start/end/all-day는 event date이며 Action deadline과 독립적이다. all-day는 YYYY-MM-DD를 그대로 보존하고 UTC 자정을 만들지 않는다.
+timed dateTime은 명시적 offset을 가진 RFC3339로 검증하며 IANA timezone을 보존한다. 불명확한 구조는 실패로 처리한다.
+수집은 Classification/Action/Deadline/AI eventObservations를 생성하지 않으며 Gemini를 호출하지 않는다.
+
+persist_calendar_item은 service_role 전용/SECURITY DEFINER/빈 search_path이며 connection→ITEM lock 순서,
+owner/active Google connection/Scope/Token/identity/hash/날짜/whitelist 검증, 원자 create/reuse/update, ITEM snapshot CAS를 수행한다.
+Google HTTP 동안 DB transaction/lock을 잡지 않는다. 동일 metadata/version/hash는 UPDATE 없이 reuse한다.
+ETag는 순서 증명이 아니므로 기존 ITEM 변경에는 더 최신인 updated가 필요하다. missing/equal/older source version의 변경은 SOURCE_CHANGED 실패로 기존 값을 보존한다.
+신규 정상 Event는 source created/updated가 없어도 null로 저장할 수 있지만 이후 순서를 입증하지 못하는 변경은 거부한다.
+기존 취소 또는 취소 상태의 복원은 이전 ITEM snapshot을 잡은 뒤 fresh GET으로 확인한다.
+명시적 취소는 최신 updated를 확인할 수 있을 때 status/etag/updated만 갱신하고 마지막 정상 본문/날짜/URL/분석을 보존한다.
+취소 updated가 없거나 순서가 불명확하면 저장 거부. 처음 보는 취소는 skipped이며 ITEM을 만들지 않는다.
+목록 부재/기간 밖 이동/접근 상실만으로 삭제·취소를 확정하지 않는다. 기간 조회 MVP는 모든 삭제·기간 밖 변경 탐지를 보장하지 않는다.
+Classification/user override/Action/Evidence/metadata.aiAnalysis 및 기존 processing_status는 갱신에서 보존한다.
+
+현재 table/column/index/RLS는 변경하지 않는다. 새 함수 Migration 두 개는 Calendar-3 사용자 승인으로 ai-hub-dev에만 적용했다.
+Production 미적용이며 다른 환경 적용은 별도 승인 범위다. 기존 Migration 이력 repair/reset은 하지 않았다.
+API/Detail 계약은 API_SPEC.md 25절, 완료 검증 범위·실행 한계는 docs/PROJECT_STATE.md를 따른다.
+
+
+# 28. 승인된 PDF/이미지 직접 업로드 MVP (Upload-1/2/3, 2026-10-05)
+
+사용자 승인에 따라 PDF, PNG, JPG/JPEG만 Unified ITEM source=upload/format=pdf|image로 처리한다.
+서버 UUID는 ITEM identity, 사용자별 원본 bytes SHA256은 dedupe identity, text hash는 content_hash다.
+같은 bytes는 filename에 관계없이 본인 ITEM 재사용, 다른 사용자에게 중복 여부 노출 없음.
+Google 원본/연결 모델 및 AI Structured Output은 변경하지 않는다.
+
+Storage 원본은 비공개 upload-originals, 경로 userId/uploadUuid/original.validatedExtension, overwrite 금지.
+원본 filename은 정규화한 표시값이며 경로에 쓰지 않는다. 본인 검증된 ITEM만 60초 원본 signed URL.
+세션/Storage 검증 후 pending ITEM, text PDF는 서버 PDF.js embedded 추출,
+PNG/JPEG는 브라우저 Tesseract.js, scan page는 브라우저 PDF.js render + Tesseract.js로 처리한다.
+서버가 원본과 page plan을 재검증하고 전체 결과의 normalize/hash/code point range를 계산해 원자 저장한다.
+브라우저 OCR은 untrusted client input이며 원본과의 의미 일치를 서버가 보증하지 않는다.
+prepare 후 lease를 해제하고 complete에 새 attempt/CAS를 사용한다. 탭 종료는 즉시 failed로 판단하지 않는다.
+완료된 동일 bytes ITEM을 우선 reuse하며 미완료 중복은 UPLOAD_IN_PROGRESS로 기존 session 재시도를 안내한다.
+원본 파일은 변경하지 않는다. 동일 complete 재시도/attempt lease CAS/안전 orphan 정리를 구현한다.
+기존 enum uploaded→queued→extracting→queued로 충분하며 마지막 queued는 후속 AI 대기다.
+metadata.upload.extraction.status 및 safe Detail page map으로 추출 완료와 AI 완료를 구분한다.
+
+상한·HTTP·상태·Evidence 세부 계약은 API_SPEC.md 24절, parser 격리/보수적 PDF 제한 및
+배포 조건은 workers/upload/README.md에서 관리한다. OCR confidence는 참고값이며 문자 삭제에 쓰지 않는다.
+Library에 기능용 upload/progress/cancel/retry 제어만 연결하며 화면 스타일/배치 디자인과 provider별 화면은 만들지 않는다.
+Classification/Action/Deadline/Embedding 및 Gemini 분석은 이 단계에 포함하지 않는다.
+
+Upload 단계는 1/2/3만 사용한다. Upload-2는 Migration/Storage policy 초안 및 격리 테스트까지.
+기존 Upload Migration/bucket/policy는 dev에 적용되어 있다. Cloud Vision/Cloud Run/Billing/OCR ADC는 MVP 제외,
+기존 ADC는 보존한다. Gemini OCR은 향후 선택적 provider 후보이며 자동 fallback을 구현하지 않는다.
+provider-neutral RPC 후속 Migration은 정적/parser/격리 검증 후 사용자 승인 전 원격 적용하지 않는다.
+사용자 승인한 후속 Migration의 ai-hub-dev 적용 및 최소 실제 PDF/이미지 OCR/ITEM/dedupe/RLS/Library/Detail 검증을 완료했다.
+Upload-3 및 전체 Upload COMPLETE. 실제 Vercel/Linux 배포와 모바일 성능 검증은 MVP 완료 조건에서 분리한 후속 TODO다.
+
+## 37. 승인된 Search MVP (Search-1 보완 / Search-2, 2026-10-05)
+
+사용자의 최종 9개 보완 조건을 적용한다. 초기 10절의 Gemini 생성형 답변은 이번 MVP에서 유예한다.
+명확한 Action/Deadline 검색은 기존 actions/action_sources를 SQL로 조회한다. UI 변경과 새 Action 생성은 범위 밖이다.
+
+- Corpus는 Unified ITEM content_text와 원본 제목/발신자다. AI 분석·분류·importance는 corpus와 relevance에 섞지 않는다.
+  **중요문서 계약은 최종 MVP 통합 TODO**이며 이 단계에서 importance 점수나 가중치를 확정하지 않는다.
+- FTS simple + 한국어 literal partial + pgvector cosine + Source/Format/날짜 필터를 결합한다.
+  ITEM별로 먼저 병합한 RRF(k=60, 동일 가중치), vector-only 최소 cosine 0.50으로 시작한다.
+  Source/importance boost, ML reranker, LLM query parser, 생성형 답변은 없다.
+- 미색인 ITEM도 keyword로 조회한다. 해야 할 일, 마감, 내일까지, 이번 주 제출은 open Action과
+  실제 confirmed deadline/current Evidence를 조회한다. 기간 조건에 needs_review 날짜를 추측해 넣지 않는다.
+  행사일은 Deadline이 아니다. User Edited와 기존 Action 상태를 수정하지 않는다.
+- Asia/Seoul을 기준으로 Gmail 수신일/Drive 수정일/Calendar 행사 구간/Upload 등록일을 구분한다.
+  Calendar end-exclusive를 유지한다. 알려진 상대 기간만 결정적으로 해석하며 연도 없는 10월은 임의 확정하지 않는다.
+- Active provider/model/dimension/version은 서버에서 고정한다:
+  gemini / gemini-embedding-2 / 768 / gemini-embedding-2:768:retrieval-v1:chunk-v1.
+  Provider abstraction과 Query/document 입력 구분을 유지한다. chunk마다 독립 embedContent를 호출한다.
+  runner cycle당 최대 8개 독립 chunk, 동시 처리 1, 예산 35초, provider timeout 15초다. 여러 chunk를 합산 입력하지 않는다.
+- Chunk 최대 1200 Unicode code points, overlap 120, ITEM당 최대 128개다.
+  ITEM 상한은 100000 code points/400000 UTF-8 bytes이며 문단·문장·PDF page/Drive tab 경계를 우선한다.
+  짧은 chunk는 경계와 최대 크기를 지킬 때 병합한다. 상한 초과는 truncate 대신 skipped_limit, 원문과 keyword 조회는 유지한다.
+- Identity는 (item_id, embedding_version, chunk_index)다. content/input hash, fingerprint, 원문 locator를 저장한다.
+  같은 input_hash+version은 벡터를 재사용한다. 제목 변경은 재Embedding, locator 변경만은 벡터 재사용,
+  User Edited/AI metadata만 변경하면 재색인하지 않는다. 삭제 cascade와 연결 해제 후 기존 검색을 유지한다.
+- Private durable jobs의 lease/CAS/chunk cursor로 resume한다. 부분 generation은 semantic 검색에서 제외한다.
+  processing_status/DB enum/분류/Action은 변경하지 않는다. 신규 ITEM은 trigger로 pending queue를 만들고
+  즉시 keyword 검색된다. Semantic 실행은 bounded endpoint/runner로 재개하며 무보장 background 호출은 없다.
+- Provider/model 변경은 새 version 병행 색인 → golden 검증 → 서버 active 전환 순서다.
+  서로 다른 version은 비교하지 않는다. 현재 vector(768)이며 다른 dimension staging에는 별도 사전검토 Migration이 필요하다.
+  클라이언트가 provider/model/version/vector를 지정할 수 없다.
+- 기본 SEARCH_SEMANTIC_ENABLED=false다. synthetic/비민감 ITEM만 서버 allowlist로 허용한다.
+  실제 개인 Gmail/Drive/Calendar/Upload 전체 semantic backfill은 별도 승인 전 자동 실행하지 않는다.
+  semantic=true Query 자체도 Gemini 외부 전송 대상임을 사전에 명시한다. 문서 승인과 Query 전송은 별개다.
+  Gemini Unpaid Services(Free Tier)는 입력·출력을 Google 제품/ML 개선에 사용할 수 있고 사람이 검토할 수 있다.
+  민감·기밀·개인정보를 보내지 않는 정책이며, Query에도 동일하게 적용한다.
+  Billing 연결 등에 따른 Paid Services 적용 여부는 실행 환경에서 별도 확인하고 무료 quota만으로 단정하지 않는다.
+  [공식 데이터 사용 조건](https://ai.google.dev/gemini-api/terms#unpaid-services)을 사전에 표시하며 provider abstraction을 유지한다.
+- 서버 공유 SQL rate limit은 사용자 request 30/min, uncached Query/document embedding 10/min, index 5/min이다.
+  Query cache는 user/query/version 기준, TTL 5분, 원자 lease로 동시 중복 호출을 막는다.
+  프론트 권장 debounce 350ms는 보안 경계가 아니다.
+- Stable pagination은 서버 snapshot(최대 200/TTL 5분)과 owner/context/version-bound HMAC cursor다.
+  limit 기본 20/최대 50. 매 페이지 소유권과 ITEM·Action·Evidence 변경/삭제를 재확인한다.
+  중간 삽입으로 기존 snapshot을 재정렬하지 않는다. 빠진 결과를 다시 채우지 않으므로 짧거나 빈 페이지에도 cursor가 있을 수 있다.
+- 기존 RLS/FK/cascade를 유지한다. 새 RPC는 service_role-only/SECURITY INVOKER/빈 search_path/명시적 owner join이다.
+  Private jobs/quota/cache/snapshot은 client 접근 금지, authenticated raw vector SELECT도 차단한다.
+  Source substring/page/tab/Calendar times/기존 Detail·안전한 Original 접근만 반환한다.
+  OCR bbox/원문 highlight는 후속 TODO이며 추출 OCR과 이미지의 의미 일치를 서버가 보증하지 않는다.
+
+Search-2는 provider/chunker/저장/SQL·pgvector/hybrid/Action/search/Similar/backfill/idempotency/RLS/격리 검증이다.
+Search-3는 실제 합성 source 색인·자연어·근거 E2E/보안/회귀/최종 문서화다. Search-4 이상은 없다.
+API 상세는 API_SPEC.md 25절, 실제 품질 gate는 docs/SEARCH_GOLDEN.md를 따른다.
+Search Migration 3건(Search-2 기본 계약, Search-3 coverage/ranking 보완)을 ai-hub-dev에 적용했다. Production 적용과 실제 개인자료 semantic 전체 backfill은 하지 않는다.
+
+### Search-3 완료 및 마감 검증
+
+Search-1/2/3 및 전체 Search COMPLETE. 합성/non-sensitive 실제 Gemini 768 embedding, Hybrid Search,
+Golden exact title/phrase Rank 1 및 semantic synonym Rank 2, ACT·Evidence·pagination·Similar·
+version/re-index/backfill/resume·fallback·rate/cache·RLS/사용자 격리 PASS.
+Coverage는 owner corpus의 totalItems/semanticIndexedItems이며 active version/current revision의 완료 generation만 센다.
+Query cache key는 owner + query + effective filters + Asia/Seoul + active embeddingVersion이다.
+Keyword 후보는 exact title → title phrase → body phrase/FTS/literal 우선순위와 source date/ID로 결정한다.
+기존 자료 보존은 row count/비민감 identity·checkpoint·metadata·소유권 및 기존 기능 회귀로 검증한다.
+Access/Refresh Token과 그 파생값을 직접 비교하지 않는다. 개인자료 semantic backfill은 미실행이다.
+실행 범위와 fixture 경로의 한계는 docs/PROJECT_STATE.md 17절 및 docs/SEARCH_GOLDEN.md에 기록한다.
+다음 단계는 Final Integration / MVP Final Verification이며 별도 지시 전 시작하지 않는다.
+
+## 38. Polished UI 2.0 — 승인된 통합 화면 (2026-10-05)
+
+첨부 사용자 요청 `POLISHED UI 2.0 + FULL-STACK INTEGRATION`에 따라 기존 polished 구조를
+Today / Library / Search / Actions / Detail / Settings에 적용한다. 기존 API·DB 계약을 유지한다.
+
+- 한국어 시스템 sans-serif, 제목 28px / 절 제목 18~20px / 본문 15~16px / metadata 13px.
+  밝은 중립 배경, 제한적인 indigo CTA·선택 메뉴·검색 focus·분석 accent, 원문 우선 Detail.
+- Desktop sidebar / Mobile bottom navigation. Today는 검색 → 확정 마감 Action → 확인 필요 → 최근 ITEM.
+- Search는 POST /api/v1/search의 결과·원문 인용·위치·cursor·keyword_only/degraded 상태를 표시한다.
+  생성형 답변·챗봇 UI 없음. semantic 기본 false, 사용자 선택 시 검색어 외부 전송 안내.
+- 기존 Library/Detail 서버 조회·Auth guard·OCR flow·Google OAuth/수집 endpoint를 재사용한다.
+  Library 날짜 필터는 기존 추가일 UTC 계약, Search 날짜는 원본 날짜 KST 계약으로 구분한다.
+- Detail의 D-Day는 저장된 confirmed Action deadline만 사용한다. KST 날짜 경계·시간 경과를 구분한다.
+  Calendar 시작/종료·AI event observation은 별도의 일정 정보이며 Action으로 승격하지 않는다.
+- Gmail의 기존 analyze endpoint는 사용자가 수동 실행할 수 있다. 메일 본문 Gemini 전송을 안내한다.
+  Drive/Calendar/Upload의 분석 endpoint를 임의 생성하거나 자동 분석·개인 semantic backfill하지 않는다.
+- 분류 수정 PATCH, Action 완료/복원 PATCH, 완료 Action 목록, 데이터 삭제 route는 현재 미구현이다.
+  해당 기능을 로컬 임시 상태로 대체하지 않는다. importance 계약은 기존 후속 TODO를 유지한다.
+
+실제 검증과 Backend GAP은 `docs/POLISHED_UI_2_REPORT.md`에서 관리한다.

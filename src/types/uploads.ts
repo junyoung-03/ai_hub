@@ -1,0 +1,12 @@
+export type UploadMime = "application/pdf" | "image/png" | "image/jpeg";
+export type UploadRequest = { fileName: string; mimeType: UploadMime; size: number };
+export type ExtractionOrigin = { method: "embedded" | "ocr"; provider: "pdfjs" | "tesseract.js"; providerVersion: string; execution: "server" | "client"; language: "kor+eng" | null; extractionVersion: "upload-text-v1" };
+export type UploadPage = ExtractionOrigin & { page: number; start: number; end: number; confidence: number | null };
+export type UploadExtraction = { version: "upload-text-v1"; status: "complete"; text: string; hash: string; pages: UploadPage[]; method: "embedded" | "ocr" | "mixed"; provider: "pdfjs" | "tesseract.js" | "mixed"; providerVersion: string; execution: "server" | "client" | "mixed"; language: "kor+eng" | null; extractionVersion: "upload-text-v1" };
+export type UploadDetail = { extractionStatus: "pending" | "running" | "complete" | "failed"; version: "upload-text-v1"; pages: UploadPage[]; error: string | null };
+export type UploadPlanPage = { page: number; method: "embedded" | "ocr"; text?: string; image?: string; mime?: "image/png" | "image/jpeg" };
+export type UploadPlan = { rawHash: string; mime: UploadMime; pages: UploadPlanPage[] };
+export type OCRPageInput = { page: number; text: string; provider: "tesseract.js"; providerVersion: string; execution: "client"; language: "kor+eng"; confidence: number | null };
+export type CompleteUploadInput = { pages: OCRPageInput[] };
+export type PreparedUpload = { uploadId: string; itemId: string; state: "stored"; pages: {page:number;method:"embedded"|"ocr"}[]; downloadUrl: string; mime: UploadMime };
+export type CompletedUpload = { itemId: string; state: string; outcome: "created" | "reused" };

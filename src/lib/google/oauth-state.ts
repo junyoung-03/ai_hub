@@ -6,7 +6,7 @@ const STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export type OAuthContext = {
-  purpose: "connect" | "drive_scope_upgrade";
+  purpose: "connect" | "drive_scope_upgrade" | "calendar_scope_upgrade";
   connectionId: string | null;
   accountId: string | null;
   connectionUpdatedAt: string | null;
@@ -48,10 +48,10 @@ export function readGoogleOAuthState(
       || typeof record.expiresAt !== "number" || record.expiresAt <= Date.now() || record.expiresAt > Date.now() + 600_000) return null;
     if (record.purpose === "connect" && record.connectionId === null && record.accountId === null && record.connectionUpdatedAt === null)
       return { purpose: "connect", connectionId: null, accountId: null, connectionUpdatedAt: null };
-    if (record.purpose === "drive_scope_upgrade" && typeof record.connectionId === "string" && USER_ID_PATTERN.test(record.connectionId)
+    if ((record.purpose === "drive_scope_upgrade" || record.purpose === "calendar_scope_upgrade") && typeof record.connectionId === "string" && USER_ID_PATTERN.test(record.connectionId)
       && typeof record.accountId === "string" && record.accountId.length > 0 && record.accountId.length <= 255
       && typeof record.connectionUpdatedAt === "string" && Number.isFinite(Date.parse(record.connectionUpdatedAt)))
-      return { purpose: "drive_scope_upgrade", connectionId: record.connectionId, accountId: record.accountId, connectionUpdatedAt: record.connectionUpdatedAt };
+      return { purpose: record.purpose, connectionId: record.connectionId, accountId: record.accountId, connectionUpdatedAt: record.connectionUpdatedAt };
   } catch { /* Malformed signed payloads cannot select an OAuth purpose. */ }
   return null;
 }

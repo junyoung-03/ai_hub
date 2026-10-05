@@ -75,3 +75,75 @@ SQL/RPC Runtime 검증과 Google/Gmail 실연결 테스트는 `../scripts/README
   적용 후 Runtime도 전체 rollback했으며 기존 실제 데이터·스키마·constraint·trigger·기존 함수·기존 이력은 전후 hash 동일.
   모든 local version은 remote와 일치하고 초기 2건 remote-only 상태는 유지했다. 전체 baseline 체인 일치로 확대 해석하지 않는다.
   기존 Migration 파일 수정 없음. 실제 Docs E2E 전에 사용자 요청으로 대기한다.
+
+## Calendar-2 — 로컬 함수 Migration 초안 / 원격 미적용
+
+- `migrations/20261005055748_google_calendar_scope_boundary.sql`: 기존 upsert에 Calendar readonly Scope/상한 9/권한 축소 방지 추가,
+  새 `upgrade_google_calendar_scopes`로 owner/account/active connection/connection 및 token CAS/전체 checkpoint·timestamp 보호.
+- `migrations/20261005055754_persist_calendar_item.sql`: 새 service_role 전용 Calendar ITEM 저장 함수.
+  기존 identity index 사용, connection→ITEM lock, whitelist/hash/date/CAS/stale 검증, 취소의 기존 정상 콘텐츠 보존.
+- Supabase CLI migration new로 파일 생성. `docs/drafts/calendar`의 두 검토 SQL과 동일하다.
+  기존 Migration/table/column/index/RLS 수정 없음. **ai-hub-dev 및 Production 미적용, 신규 history 등록 없음.**
+- pglast 8.5 SQL/PLpgSQL 파서와 정적 안전 검사 및 메모리 PostgreSQL 합성 검증을 수행한다.
+  실제 Supabase RPC/RLS/다중 세션 경합 검증은 Calendar-3 승인 후 별도로 수행한다.
+- 사용자 승인 전 db push/apply_migration/history repair/reset 금지. 새 로컬 version이 pending인 것은 현재 의도된 상태다.
+
+Calendar-3 승인 후 위 두 Migration은 ai-hub-dev에만 적용/history 등록했다. 위 미적용 문장은 Calendar-2 당시 이력이다.
+원격 함수 본문/보안/권한 및 version/name/statements의 로컬 일치 PASS. 기존 초기 2건 remote-only 이력은 유지했다.
+기존 데이터/Token/Schema/RLS/constraint/trigger/기타 함수/기존 history hash 동일, 합성 Runtime/RLS 전체 rollback PASS.
+Production 적용 없음. 이후 실제 OAuth/Event 1건 E2E 및 최종 Calendar COMPLETE 판정은 `../docs/PROJECT_STATE.md` 10절을 따른다.
+
+
+## Upload-2 — 로컬 SQL/Storage policy 초안 (원격 미적용)
+
+`migrations/20261005070410_upload_storage_session_boundary.sql` 하나만 새 로컬 초안이며
+`../docs/drafts/upload/20261005070410_upload_storage_session_boundary.sql` 검토본과 동일하다.
+private.upload_sessions RLS/service_role 전용 RPC, 사용자별 upload UUID/raw hash unique index,
+private 5MB/MIME bucket 및 exact-session-path INSERT/SELECT 정책을 정의한다. authenticated UPDATE/DELETE 없음.
+짧은 global/user advisory lock·원본 hash dedupe·Idempotency-Key·pending/lease/CAS/원자 완료/실패/정리 경계를 포함한다.
+기존 Migration 수정, 원격 적용/history 등록, bucket 생성 및 Storage policy 변경은 하지 않았다.
+
+pglast 8.5 SQL AST 및 PL/pgSQL 구문 PASS(오프라인 catalog rowtype는 record로 표현).
+임시 PostgreSQL/WASM 실제 draft SQL 실행으로 owner/RLS/권한/dedupe/예약/원자 실패/완료/정리를 검증했다.
+실제 Supabase Storage API token/upsert 의미·원격 RLS·다중 프로세스 경합/worker 배포는 Upload-3에서 별도로 검증한다.
+초안의 session table/index/bucket/policy 생성은 실제 구조 변경이므로 사용자 승인 전 db push/apply/history 등록 금지.
+
+
+Upload-3 사용자 승인 후 `20261005070410` 한 건을 ai-hub-dev 적용/history 등록했다.
+Upload-2의 미적용 문장은 당시 이력이다. 기존 object/data/Token/분석/이력 보존 및 actual RPC/RLS
+합성 transaction/rollback, Storage HTTP owner/foreign/anon/path/private/upsert/no-overwrite 검증 PASS.
+기존 초기 두 remote-only Migration을 유지하고 history repair/reset은 하지 않았다.
+위 ADC/private parser worker 대기 조건은 이전 정책의 이력이다. 현재는 browser OCR MVP이며 전체 Upload COMPLETE다.
+현재 상태는 PROJECT_STATE.md 15절을 따른다.
+
+`20261005093526_upload_provider_neutral_rpc.sql`은 **사용자 승인 후 ai-hub-dev 적용 완료**다.
+기존 upload_session_rpc 한 함수와 service-only EXECUTE 권한만 정의한다. 새 table/column/index/policy/bucket 없음.
+provider-neutral origin whitelist/NFC/range 검증, 미완료 dedupe 거절, expired running snapshot/CAS 복구를 포함한다.
+SQL/PLpgSQL parser 및 ephemeral PostgreSQL 13 checks PASS. 적용된 Migration/draft는 수정하지 않았다.
+승인된 한 건만 적용/history 등록했으며 기존 데이터/Storage/RLS와 초기 두 remote-only history를 보존했다.
+local/remote history, 함수 본문 및 service-only 권한 검증 PASS. 적용된 Migration 파일은 수정하지 않는다.
+
+## Search-2 — ai-hub-dev 적용 완료
+
+`migrations/20261005113838_search_contract_and_rpcs.sql` 한 건을 사용자 Search-2 지시에 따라
+read-only preflight 후 ai-hub-dev에 적용하고 history 등록했다. Production에는 적용하지 않았다.
+파일의 local draft 주석은 작성 시점 기록이며 현재 상태는 적용 완료다. 적용된 SQL 본문은 수정하지 않는다.
+
+pgvector 0.8.2/기존 embedding 0건을 확인한 뒤 embedding을 vector(768)로 고정했다.
+version별 ITEM/chunk unique, locator/hash/fingerprint, private job/rate/query cache/snapshot 및
+service_role 전용 search_runtime/search_index/search_candidates/search_similar RPC를 추가했다.
+RLS와 owner 검증을 유지하고 authenticated의 raw embedding SELECT 및 새 RPC EXECUTE를 차단했다.
+private 테이블은 RLS enabled, client policy 없음, client GRANT 없음이며 service_role만 사용한다.
+Supabase advisor의 RLS enabled/no policy INFO는 이 의도된 서버 전용 경계다.
+
+적용 후 원격 함수 본문/history/권한과 로컬 Migration 일치 PASS.
+기존 ITEM/분류/Action/근거/연결/Token 데이터 해시 동일. 새 chunk/job/cache/session 0건 유지.
+Migration 적용으로 실제 embedding 호출이나 개인 데이터 backfill은 시작되지 않는다.
+개인 전체 backfill은 별도 승인 필요하며 CLI runner를 자동 실행하지 않는다.
+Ephemeral PostgreSQL/pgvector 실제 SQL 8 checks PASS. 원격 HTTP E2E와 실제 semantic 품질은
+Search-3 항목이며 `../docs/PROJECT_STATE.md` 16절과 `../docs/SEARCH_GOLDEN.md`를 따른다.
+
+Search-3의 `20261005115533_search_coverage.sql` 및 `20261005121340_search_rank_ties.sql`은 dev 적용 완료다.
+전자는 service-only owner corpus coverage, 후자는 exact-title 및 keyword source-date/ID tie-break만 보완한다.
+원격 history와 public column/기존 RLS/owner 경계를 확인했다. 적용된 SQL은 변경하지 않는다.
+전체 Search COMPLETE, 검증 경계 및 개인정보/credential 마감 정책은 PROJECT_STATE.md 17절을 따른다.
