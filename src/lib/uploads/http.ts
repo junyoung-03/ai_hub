@@ -4,6 +4,8 @@ import { uploadErrorStatus } from "@/lib/uploads/service";
 export const uploadResponse=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store',Pragma:'no-cache'}});
 export function uploadFailure(error:unknown){
   const code=error instanceof AuthenticationRequiredError?'UNAUTHORIZED':error instanceof UploadError?error.code:'INTERNAL_ERROR';
+  // Fixed allowlisted code only: never log request bodies, files, paths or credentials.
+  console.warn('UPLOAD_FAILURE',code);
   return uploadResponse({error:{code,message:'업로드 요청을 완료하지 못했습니다.',details:{}}},code==='UNAUTHORIZED'?401:error instanceof UploadError?uploadErrorStatus(error.code):500);
 }
 export function assertUploadOrigin(request:Request){if(request.headers.get('origin')!==new URL(request.url).origin)throw new UploadError('FORBIDDEN');}

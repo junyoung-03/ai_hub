@@ -7,8 +7,10 @@ const nextConfig: NextConfig = {
   agentRules: false,
   serverExternalPackages: ['sharp','@napi-rs/canvas','pdfjs-dist'],
   outputFileTracingIncludes: {
-    '/api/v1/uploads/*/prepare': ['./workers/upload/{child,parser}.mjs','./node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/*/complete': ['./workers/upload/{child,parser}.mjs','./node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/[uploadId]/prepare': ['./workers/upload/**/*', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/[uploadId]/complete': ['./workers/upload/**/*', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/*/prepare': ['./workers/upload/**/*', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/*/complete': ['./workers/upload/**/*', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
   },
   async headers(){return [
     {source:'/library',headers:[{key:'Content-Security-Policy',value:"worker-src 'self'; object-src 'none'; base-uri 'self'"}]},
