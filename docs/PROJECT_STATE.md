@@ -2,8 +2,8 @@
 
 최종 갱신: 2026-10-06 (Asia/Seoul)
 프로젝트: `C:\Users\MYCOM\ai_hub`
-현재 상태: **기존 완료 단계 유지. FINAL BACKEND GAP FIX PARTIAL — Classification 수정·Action 완료/복원 검증 완료, 실제 Gemini 생성·저장·override 보호 PASS. 최종 실제 결과의 브라우저 Detail 재조회만 미완료.**
-현재 허용 범위: 사용자 요청 및 RPC 추가 승인에 따라 Backend GAP 3개를 구현했다. 최신 결과는 19절 및 docs/FINAL_BACKEND_GAP_REPORT.md를 따른다. 승인된 dev RPC 1개만 추가했고 개인자료 backfill/Notion 수정/디자인 고도화/Production 배포는 수행하지 않았다. 전체 MVP Backend Integration은 아직 미완료.
+현재 상태: **POLISHED VISUAL TRANSPLANT PARTIAL — 실제 visual 이식·Desktop/Mobile·분류/Action·실제 AI Detail·새 OCR·재로그인·tests/build PASS. 추가 합성 이미지 AI503 및 외부 Google 재수집 검증은 남음.**
+현재 허용 범위: 첨부 polished ZIP의 실제 visual 구조를 기존 Backend/API 위에 선별 이식했다. Backend/API/types/DB/RLS/migrations 변경 없음. 최신 결과는 20절 및 docs/POLISHED_VISUAL_TRANSPLANT_REPORT.md를 따른다. Notion/Production 배포/개인자료 backfill 없음.
 
 ## 1. 기준과 작업 원칙
 
@@ -783,3 +783,41 @@ Search-1 COMPLETE / Search-2 COMPLETE / Search-3 COMPLETE. 이 절이 이전의 
 - 외부 노출 가능성이 있는 0.0.0.0 실행은 자동 승인 검토가 거부했고 실행하지 않았다.
   loopback 127.0.0.1 미리보기만 다시 시작했다. Production 배포 없음.
 - 현재 **PARTIAL / 구현 잔여 0 / 완료 검증 P0 1(실제 결과 브라우저 Detail 재조회)**.
+
+## 20. POLISHED VISUAL TRANSPLANT (2026-10-06)
+
+이 절은 19절의 브라우저 재조회 미완료 및 디자인 미변경 상태를 대체한다.
+
+- stale3000/3001 서버 종료, 이전 .next 보관, 변경 전 baseline build PASS, 이후3000만 사용.
+- ZIP 실제 AppShell/TopBar/Sidebar/Home/Search/Library/ActionCard/ItemCard/Detail/Settings visual 이식.
+  정확한 semantic tokens/radius8/12/16px/Pretendard same-origin font 적용. PrototypeContext/mock 없음.
+- 최종 production build를 로컬3000에서 Desktop1440/Mobile390으로 검증. overflow 없음.
+- 실제 Google logout→login→Home PASS. 분류 PATCH→Detail→원래값 복구 및 Action 완료→복원 PASS.
+- 19절의 실제 Gemini 합성 PDF 결과를 브라우저에서 확인했다. 이 기존 검증 P0는 해소됐다.
+  실제 deadline2026-10-15/event2026-10-20/Action/current+historical Evidence/user override 표시 PASS.
+- Search→Detail/cursor20→40/형식필터3건 PASS. 실제 semantic provider unavailable→keyword fallback PASS.
+- 실제 OriginalAccess signed link 및 Similar not_indexed 상태 표시 PASS.
+- 새 비민감 합성 이미지 1건의 실제 Tesseract7/client/kor+eng OCR 저장 및 Detail 표시 PASS.
+  I/l 오차는 유지한다. 기존 합성 JPG 재사용 및 새 이미지 자동 AI 분석은503으로 실패했다.
+  저장된 원문/OCR는 유지했고 성공으로 판정하지 않았다. 신규 합성 ITEM1건 유지, 데이터 삭제 없음.
+- Backend/API/routes/lib/types/proxy/workers/migrations/package/lockfile tracked diff 없음.
+  Google/Upload/Classification/Action/Original/Analyze handler body를 HEAD와 AST 비교해 동일 확인.
+- Google 수집/OAuth isolated tests 및 실제 저장 Gmail/Drive/Calendar query reads PASS.
+  외부 재수집은 이번에 실행하지 않았다. 개인자료 Gemini 분석/semantic backfill 없음.
+- npm test161/typecheck/lint/build/check:supabase/git diff --check PASS.
+- **RESULT PARTIAL**: visual 이식 및 핵심 browser 검증 완료. 추가 이미지 AI503과 외부 Google 재수집
+  E2E는 미완료이므로 전체 live Integration COMPLETE/MVP_READY 미선언. 재현된 UI P0결함0.
+- Preview 배포 가능한 build. 실제 외부 Preview/Production 배포/Notion/DB 변경 없음.
+- 파일 매핑, 20항목 결과, screenshot, 검증 경계는 `docs/POLISHED_VISUAL_TRANSPLANT_REPORT.md` 참조.
+
+## 21. PREVIEW FINAL E2E 준비 (2026-10-06)
+
+- 사용자 확인: Preview URL 없음. 실제 Preview E2E NOT_RUN, 배포 단계는 프로젝트 연결/접근 확인 대기.
+- npm test161/typecheck/lint/build/check:supabase/git diff --check 재검사 PASS.
+  check:supabase는 public Auth 연결 검사이며 실제 Preview Auth/RLS를 대체하지 않는다.
+- Preview 체크리스트/12항목 결과 및 개인자료 없는 합성 PNG fixture 준비. 코드/API/DB 수정 없음.
+- 현재 main에는 commit/push하지 않았다. Vercel 신규 프로젝트 첫 배포는 Production이므로 금지 범위에서
+  실행하지 않는다. 기존 프로젝트/Production Branch 확인 후 Preview 전용 브랜치로 검증해야 한다.
+- 이미지 AI503 및 외부 Google 최소 수집/실제 Preview 검증은 아직 미완료. 이전 로컬 PASS는 유지한다.
+- **RESULT PARTIAL**. 전체 P0=0/MVP_READY_FOR_PRODUCTION 미선언, Production 배포 없음.
+- `docs/PREVIEW_FINAL_E2E_CHECKLIST.md`, `docs/PREVIEW_FINAL_E2E_REPORT.md` 참조.

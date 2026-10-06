@@ -35,5 +35,5 @@ export function ActionStateButton({ actionId, status }: { actionId: string; stat
       if (!response.ok) throw new Error(); window.dispatchEvent(new Event("ai-hub:actions-changed")); router.refresh();
     } catch { setError(true); } finally { setBusy(false); }
   }
-  return <div className="space-y-2"><button className="btn-secondary" disabled={busy} onClick={() => void change()}>{busy ? "저장 중…" : status === "completed" ? "미완료로 복원" : "완료 처리"}</button>{error && <p role="alert" className="text-sm text-destructive">상태를 저장하지 못했습니다. 다시 시도해 주세요.</p>}</div>;
+  return <div className="space-y-2"><button className={`inline-flex min-h-9 items-center rounded-lg px-2 text-xs font-medium hover:bg-canvas disabled:opacity-50 ${status === "completed" ? "text-green" : "text-muted-foreground hover:text-ink"}`} disabled={busy} onClick={() => void change()}>{busy ? "저장 중…" : status === "completed" ? "미완료로 복원" : "완료 처리"}</button>{error && <p role="alert" className="text-sm text-destructive">상태를 저장하지 못했습니다. 다시 시도해 주세요.</p>}</div>;
 }

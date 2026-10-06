@@ -26,7 +26,7 @@ export function LogoutButton() {
 
   return (
     <div className="shrink-0 text-right">
-      <button type="button" onClick={signOut} disabled={pending} className="min-h-10 rounded-md border bg-background px-3 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
+      <button type="button" onClick={signOut} disabled={pending} className="min-h-9 rounded-lg px-1.5 text-xs text-muted-foreground hover:bg-canvas hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50 sm:px-3 sm:text-sm">
         {pending ? "로그아웃 중…" : "로그아웃"}
       </button>
       {message && <p role="alert" className="mt-2 text-xs text-destructive">{message}</p>}

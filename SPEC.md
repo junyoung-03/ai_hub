@@ -1356,3 +1356,23 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 후속 검증에서 합성 PDF의 실제 모델 생성·검증·atomic 저장 및 사용자 override 보호를 확인했다.
 실제 결과의 최종 브라우저 Detail 확인은 로컬 연결 거부로 미완료다.
 상세 결과는 `docs/FINAL_BACKEND_GAP_REPORT.md`를 따른다.
+
+## 40. POLISHED VISUAL TRANSPLANT (2026-10-06)
+
+사용자의 후속 명시 요청에 따라 38~39절의 기존 visual 유지 범위를 대체한다.
+첨부 polished frontend ZIP의 실제 JSX/layout/Tailwind/token을 현재 Backend/API 위에 선별 이식한다.
+
+- Canvas #f6f5f2, surface #ffffff, ink/primary #1c1b19, muted #6f6b64, faint #9c978f,
+  line #e6e3dc, brand-soft #f1efe9. rounded-lg/xl/2xl은 실제 8/12/16px.
+- Pretendard1.3.9를 license와 함께 same-origin으로 제공한다. 새 package 추가 없음.
+- TopBar56px 내부/global search/outline upload, Sidebar208px/menu36px/14px active warm canvas.
+- Home 검색→마감→확인 필요→최근 자료. Search/Library divided result rows.
+- Action D-Day rail/날짜/출처/Evidence/실제 completed API. 기존 KST 날짜 계산 유지.
+- Detail65:35 및 모바일 원문/AI 탭, paper original/structured insight.
+- 모바일 top horizontal 메뉴 대신 기존 bottom nav 유지. Upload/OCR checkpoint와 Google handler 유지.
+- PrototypeContext/mock/fake count/precomputed D-Day/memory-only functional persistence 이식 금지.
+- API/routes/types/DB/RLS/migrations/Google 및 OCR 기능 변경 없음. 제품 data 계약 변경 없음.
+
+현재 브라우저에서 실제 저장된 Gemini 합성 PDF 결과 및 Classification/Action writes를 재검증했다.
+추가 합성 OCR 이미지의 분석503과 미실행 외부 Google 재수집을 성공으로 판정하지 않는다.
+검증 결과/차이/남은 GAP은 `docs/POLISHED_VISUAL_TRANSPLANT_REPORT.md`를 따른다.

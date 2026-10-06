@@ -21,8 +21,8 @@ export function Navigation({ mobile = false }: { mobile?: boolean }) {
       {links.map(({ href, label, icon: Icon }) => {
         const active = pathname === href || (href === "/library" && pathname.startsWith("/items/"));
         return <Link key={href} href={href} aria-current={active ? "page" : undefined}
-          className={cn("flex min-h-12 items-center rounded-lg hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring", mobile ? "flex-col justify-center gap-1 py-2 text-[13px]" : "gap-3 px-3 text-[15px]", active && "bg-accent font-semibold text-primary")}>
-          <Icon className="size-5 shrink-0" aria-hidden="true" />
+          className={cn("flex items-center rounded-lg text-muted-foreground hover:bg-canvas hover:text-ink focus-visible:outline-2 focus-visible:outline-ring", mobile ? "min-h-14 flex-col justify-center gap-1 py-2 text-[13px]" : "h-9 gap-2.5 px-3 text-sm", active && "bg-canvas font-medium text-ink")}>
+          <Icon className="size-4 shrink-0" aria-hidden="true" />
           {label}
         </Link>
         })}

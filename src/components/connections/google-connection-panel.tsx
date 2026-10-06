@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
+import { Mail, Folder, CalendarDays } from "lucide-react";
 import { formatTimestamp } from "@/lib/items/presentation";
 import { runBoundedAnalysis } from "@/lib/items/browser-analysis";
 
@@ -124,51 +125,21 @@ export function GoogleConnectionPanel({ connection, notice }: { connection: Conn
   }
 
   const connected = connection?.status === "connected";
-  return (
-    <div className="panel space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold">Google 연결</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Gmail · Drive · Calendar의 읽기 권한과 수집을 관리합니다. 서비스 로그인 계정과 다른 Google 계정을 연결할 수 있습니다.
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">Gmail·Drive 수집 후 미분석·변경 자료의 본문을 Gemini로 보내 최대 3건씩 분석합니다. 민감한 자료는 수집하지 마세요. Calendar는 자동 분석에서 제외합니다.</p>
-      </div>
-
-      <dl className="grid gap-3 text-sm sm:grid-cols-[9rem_1fr]">
-        <dt className="text-muted-foreground">연결 상태</dt>
-        <dd>{connected ? "연결됨" : connection?.status === "error" ? "연결 오류" : "연결되지 않음"}</dd>
-        {connection?.accountEmail && <><dt className="text-muted-foreground">연결된 이메일</dt><dd className="break-all">{connection.accountEmail}</dd></>}
-        {connection?.lastSyncedAt && <><dt className="text-muted-foreground">마지막 동기화</dt><dd>{formatTimestamp(connection.lastSyncedAt)}</dd></>}
-      </dl>
-
-      <div className="flex flex-wrap gap-3">
-        {connected && (
-          <button type="button" onClick={() => connect("drive_scope_upgrade")} disabled={pending !== null} className="btn-secondary">
-            {pending === "drive" ? "동의 준비 중…" : "Drive/Docs 읽기 권한 추가"}
-          </button>
-        )}
-        <button type="button" onClick={() => connect()} disabled={pending !== null} className="min-h-10 rounded-md bg-primary px-4 text-sm text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
-          {pending === "connect" ? "연결 준비 중…" : connected ? "Google 메일 재연결" : "Google 메일 연결"}
-        </button>
-        {connected && (
-          <button type="button" onClick={sync} disabled={pending !== null} className="min-h-10 rounded-md border bg-background px-4 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
-            {pending === "sync" ? "메일 수집 중…" : "Gmail 초기 수집"}
-          </button>
-        )}
-        {connected && (
-          <button type="button" onClick={disconnect} disabled={pending !== null} className="min-h-10 rounded-md border bg-background px-4 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
-            {pending === "disconnect" ? "연결 해제 중…" : "연결 해제"}
-          </button>
-        )}
-      </div>
-      <div className="grid gap-5 lg:grid-cols-2">
-        <section className="space-y-4 rounded-lg border p-5"><h3>Google Drive</h3><p className="text-sm text-muted-foreground">{connected && connection?.capabilities.drive ? "읽기 권한 연결됨" : "읽기 권한 동의 필요"} · Google Docs만 수집합니다.</p><label className="block text-sm">수집 대상<select className="field mt-1" value={driveMode} onChange={e=>setDriveMode(e.target.value)}><option value="folder">폴더 ID</option><option value="files">파일 ID 목록 (최대 20개)</option></select></label><label className="block text-sm">{driveMode === "folder" ? "폴더 ID" : "파일 ID (쉼표나 줄바꿈으로 구분)"}<textarea className="field mt-1" rows={2} value={driveTarget} onChange={e=>setDriveTarget(e.target.value)} /></label><button className="btn-secondary" disabled={pending!==null || !connected || !connection?.capabilities.drive || !driveTarget.trim()} onClick={()=>void collect("drive")}>{pending==="drive-collect"?"Drive 수집 중…":"Drive 수집"}</button></section>
-        <section className="space-y-4 rounded-lg border p-5"><h3>Google Calendar</h3><p className="text-sm text-muted-foreground">{connected && connection?.capabilities.calendar ? "읽기 권한 연결됨" : "읽기 권한 동의 필요"} · 기본 캘린더의 일정만 수집합니다.</p><p className="text-sm">일정 날짜는 할 일 마감일과 별도로 보관됩니다.</p><button className="btn-secondary" disabled={pending!==null || !connected} onClick={()=>void connect("calendar_scope_upgrade")}>Calendar 읽기 권한 추가</button><button className="btn-secondary" disabled={pending!==null || !connected || !connection?.capabilities.calendar} onClick={()=>void collect("calendar")}>{pending==="calendar-collect"?"Calendar 수집 중…":"Calendar 수집"}</button></section>
-      </div>
-      {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
-      {syncResult && <p role="status" className="text-sm">{syncResult}</p>}
-      <p className="text-sm text-muted-foreground">Gmail은 최근 30일 받은편지함에서 최대 100건을 수집합니다. 연결 해제는 새 수집을 중단하며 기존 자료·검색·할 일은 유지합니다.</p>
-      <Link href="/library" className="inline-block text-sm text-primary">수집된 자료 확인 →</Link>
+  return <div className="max-w-2xl space-y-6">
+    <div><h2 className="text-base font-medium">연결된 서비스</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Gmail · Drive · Calendar의 읽기 권한과 수집을 관리합니다. 서비스 로그인과 다른 Google 계정도 연결할 수 있습니다.</p></div>
+    <div className="rounded-xl border border-line bg-surface px-5 py-4">
+      <dl className="space-y-2 text-sm"><div className="flex flex-wrap justify-between gap-2"><dt className="text-muted-foreground">Google 계정</dt><dd className={connected ? "text-green" : "text-muted-foreground"}>{connected ? "연결됨" : connection?.status === "error" ? "연결 오류" : "연결되지 않음"}</dd></div>{connection?.accountEmail && <div><dt className="sr-only">연결된 이메일</dt><dd className="break-all">{connection.accountEmail}</dd></div>}{connection?.lastSyncedAt && <div className="meta"><dt className="inline">마지막 동기화 · </dt><dd className="inline">{formatTimestamp(connection.lastSyncedAt)}</dd></div>}</dl>
+      <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={()=>connect()} disabled={pending!==null} className="btn-primary">{pending === "connect" ? "연결 준비 중…" : connected ? "Google 메일 재연결" : "Google 메일 연결"}</button>{connected && <button type="button" onClick={disconnect} disabled={pending!==null} className="btn-secondary">{pending === "disconnect" ? "연결 해제 중…" : "연결 해제"}</button>}</div>
     </div>
-  );
+    <div className="overflow-hidden rounded-xl border border-line bg-surface divide-y divide-line">
+      <section className="px-5 py-4"><div className="flex items-start gap-3.5"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-canvas"><Mail className="size-5 text-muted-foreground" aria-hidden="true" /></span><div className="min-w-0 flex-1"><h3 className="text-sm font-semibold">Gmail</h3><p className="mt-1 text-sm text-muted-foreground">{connected && connection?.capabilities.gmail ? "읽기 권한 연결됨" : "읽기 권한 동의 필요"}</p><p className="meta mt-1">최근 30일 받은편지함 · 최대 100건</p></div>{connected && <button type="button" onClick={sync} disabled={pending!==null} className="btn-secondary">{pending === "sync" ? "수집 중…" : "Gmail 초기 수집"}</button>}</div></section>
+      <section className="px-5 py-4"><div className="flex items-start gap-3.5"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-canvas"><Folder className="size-5 text-muted-foreground" aria-hidden="true" /></span><div className="min-w-0 flex-1"><h3 className="text-sm font-semibold">Google Drive</h3><p className="mt-1 text-sm text-muted-foreground">{connected && connection?.capabilities.drive ? "읽기 권한 연결됨" : "읽기 권한 동의 필요"} · Google Docs</p></div></div>
+        <details className="mt-3"><summary className="cursor-pointer text-sm text-muted-foreground">수집 대상과 권한 관리</summary><div className="mt-4 space-y-3">{connected && <button type="button" onClick={()=>connect("drive_scope_upgrade")} disabled={pending!==null} className="btn-secondary">{pending === "drive_scope_upgrade" ? "동의 준비 중…" : "Drive/Docs 읽기 권한 추가"}</button>}<label className="block text-sm">수집 대상<select className="field mt-1" value={driveMode} onChange={e=>setDriveMode(e.target.value)}><option value="folder">폴더 ID</option><option value="files">파일 ID 목록 (최대 20개)</option></select></label><label className="block text-sm">{driveMode === "folder" ? "폴더 ID" : "파일 ID (쉼표나 줄바꿈으로 구분)"}<textarea className="field mt-1" rows={2} value={driveTarget} onChange={e=>setDriveTarget(e.target.value)} /></label><button className="btn-secondary" disabled={pending!==null || !connected || !connection?.capabilities.drive || !driveTarget.trim()} onClick={()=>void collect("drive")}>{pending==="drive-collect"?"Drive 수집 중…":"Drive 수집"}</button></div></details>
+      </section>
+      <section className="px-5 py-4"><div className="flex items-start gap-3.5"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-canvas"><CalendarDays className="size-5 text-muted-foreground" aria-hidden="true" /></span><div className="min-w-0 flex-1"><h3 className="text-sm font-semibold">Google Calendar</h3><p className="mt-1 text-sm text-muted-foreground">{connected && connection?.capabilities.calendar ? "읽기 권한 연결됨" : "읽기 권한 동의 필요"}</p><p className="meta mt-1">기본 캘린더 · 일정 날짜와 행동 마감은 구분</p></div></div><div className="mt-3 flex flex-wrap gap-2"><button className="btn-secondary" disabled={pending!==null || !connected} onClick={()=>void connect("calendar_scope_upgrade")}>Calendar 읽기 권한 추가</button><button className="btn-secondary" disabled={pending!==null || !connected || !connection?.capabilities.calendar} onClick={()=>void collect("calendar")}>{pending==="calendar-collect"?"Calendar 수집 중…":"Calendar 수집"}</button></div></section>
+    </div>
+    {message && <p role="alert" className="text-sm text-destructive">{message}</p>}{syncResult && <p role="status" className="text-sm">{syncResult}</p>}
+    <p className="text-sm leading-6 text-muted-foreground">Gmail·Drive 수집 후 미분석·변경 자료의 본문을 Gemini로 보내 최대 3건씩 분석합니다. 민감한 자료는 수집하지 마세요. Calendar는 자동 분석에서 제외합니다.</p>
+    <p className="text-sm leading-6 text-muted-foreground">연결 해제는 신규 수집을 중단하며 기존 자료·검색·할 일은 유지합니다.</p><Link href="/library" className="inline-block text-sm underline-offset-4 hover:underline">수집된 자료 확인 →</Link>
+  </div>;
 }

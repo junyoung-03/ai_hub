@@ -9,7 +9,7 @@ export function LibraryFilters({ query }: { query: ItemQuery }) {
   const { filters } = query;
   const enums = Constants.public.Enums;
   return (
-    <form action="/library" method="get" className="panel mb-6 space-y-4">
+    <form action="/library" method="get" className="mb-6 space-y-4 border-b pb-6">
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="text-sm">출처<select name="source" defaultValue={filters.source ?? ""} className={inputClass}><option value="">전체</option>{enums.item_source.map((value) => <option key={value} value={value}>{sourceLabels[value]}</option>)}</select></label>
         <label className="text-sm">추가일 시작 (UTC)<input type="date" name="from" defaultValue={filters.from ?? ""} className={inputClass} /></label>
