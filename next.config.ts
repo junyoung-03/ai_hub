@@ -5,12 +5,12 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   // Keep the repository's existing development instructions unchanged.
   agentRules: false,
-  serverExternalPackages: ['@napi-rs/canvas','pdfjs-dist'],
+  serverExternalPackages: ['pdfjs-dist'],
   outputFileTracingIncludes: {
-    '/api/v1/uploads/[uploadId]/prepare': ['./workers/upload/{child,parser}.mjs', './node_modules/{@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/[uploadId]/complete': ['./workers/upload/{child,parser}.mjs', './node_modules/{@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/*/prepare': ['./workers/upload/{child,parser}.mjs', './node_modules/{@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/*/complete': ['./workers/upload/{child,parser}.mjs', './node_modules/{@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/[uploadId]/prepare': ['./workers/upload/{child,parser}.mjs', './node_modules/pdfjs-dist/**/*'],
+    '/api/v1/uploads/[uploadId]/complete': ['./workers/upload/{child,parser}.mjs', './node_modules/pdfjs-dist/**/*'],
+    '/api/v1/uploads/*/prepare': ['./workers/upload/{child,parser}.mjs', './node_modules/pdfjs-dist/**/*'],
+    '/api/v1/uploads/*/complete': ['./workers/upload/{child,parser}.mjs', './node_modules/pdfjs-dist/**/*'],
   },
   async headers(){return [
     {source:'/library',headers:[{key:'Content-Security-Policy',value:"worker-src 'self'; object-src 'none'; base-uri 'self'"}]},

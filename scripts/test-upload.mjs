@@ -76,7 +76,7 @@ test('image parser verifies valid PNG/JPEG, dimensions, and rejects spoofing/tru
   const apng=Buffer.concat([validPng.subarray(0,validPng.length-12),Buffer.from([0,0,0,8,0x61,0x63,0x54,0x4C,0,0,0,1,0,0,0,1,0,0,0,0]),validPng.subarray(validPng.length-12)]);
   await assert.rejects(isolatedInspect(apng,'image/png'),{message:'UNSUPPORTED_FILE'});
 });
-test('Vercel runtime executes in-process without fork for PNG/JPEG, while non-Vercel retains fork',async()=>{
+test('Vercel runtime executes in-process without fork for PNG/JPEG/PDF, while non-Vercel retains fork',async()=>{
   const validPng=await imageFixture('png',16,12);
   const validJpg=await imageFixture('jpeg',16,12);
   const origVercel=process.env.VERCEL;
@@ -94,11 +94,19 @@ test('Vercel runtime executes in-process without fork for PNG/JPEG, while non-Ve
     assert.equal(forkCallsJpg, 0, 'fork must not be called for JPEG in Vercel runtime');
     assert.equal(planJpg.pages[0].method, 'ocr');
 
-    // 3. Corrupt image rejection in Vercel in-process mode
+    // 3. Vercel env flag + PDF -> fork is NOT called
+    let forkCallsPdf = 0;
+    const planPdf = await isolatedInspect(pdfFixture(['text','scan']), 'application/pdf', { _fork: () => { forkCallsPdf++; } });
+    assert.equal(forkCallsPdf, 0, 'fork must not be called for PDF in Vercel runtime');
+    assert.equal(planPdf.pages[0].method, 'embedded');
+    assert.equal(planPdf.pages[1].method, 'ocr');
+
+    // 4. Corrupt image/pdf rejection in Vercel in-process mode
     await assert.rejects(isolatedInspect(Buffer.from([137,80,78,71,13,10,26,10,0,0]), 'image/png'), { message: 'INVALID_FILE' });
     await assert.rejects(isolatedInspect(Buffer.from([255,216,255,0,0]), 'image/jpeg'), { message: 'INVALID_FILE' });
+    await assert.rejects(isolatedInspect(Buffer.from('%PDF-1.7 corrupt'), 'application/pdf'), { message: 'INVALID_FILE' });
 
-    // 4. Non-Vercel + PNG -> existing fork retained
+    // 5. Non-Vercel + PNG -> existing fork retained
     delete process.env.VERCEL;
     let forkCallsNonVercel = 0;
     const { fork } = await import('node:child_process');
@@ -110,6 +118,18 @@ test('Vercel runtime executes in-process without fork for PNG/JPEG, while non-Ve
     });
     assert.equal(forkCallsNonVercel, 1, 'fork must be called for PNG in non-Vercel runtime');
     assert.equal(planLocal.pages[0].method, 'ocr');
+
+    // 6. Non-Vercel + PDF -> existing fork retained
+    let forkCallsNonVercelPdf = 0;
+    const planLocalPdf = await isolatedInspect(pdfFixture(['text','scan']), 'application/pdf', {
+      _fork: (...args) => {
+        forkCallsNonVercelPdf++;
+        return fork(...args);
+      }
+    });
+    assert.equal(forkCallsNonVercelPdf, 1, 'fork must be called for PDF in non-Vercel runtime');
+    assert.equal(planLocalPdf.pages[0].method, 'embedded');
+    assert.equal(planLocalPdf.pages[1].method, 'ocr');
   } finally {
     if (origVercel !== undefined) process.env.VERCEL = origVercel;
     else delete process.env.VERCEL;

@@ -43,8 +43,8 @@ function directInspect(bytes, mime, { timeout, signal, render }) {
 
 /** @param {Buffer} bytes @param {string} mime @param {{timeout?:number,signal?:AbortSignal,render?:boolean,_fork?:typeof fork}} options */
 export function isolatedInspect(bytes, mime, { timeout = 120000, signal, render = true, _fork = fork } = {}) {
-  const isVercelImage = Boolean(process.env.VERCEL) && (mime === 'image/png' || mime === 'image/jpeg');
-  if (isVercelImage) {
+  const isVercelRuntime = Boolean(process.env.VERCEL) && (mime === 'image/png' || mime === 'image/jpeg' || mime === 'application/pdf');
+  if (isVercelRuntime) {
     return directInspect(bytes, mime, { timeout, signal, render });
   }
 

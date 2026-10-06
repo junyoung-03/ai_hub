@@ -114,7 +114,7 @@ function scanPdf(bytes){
     re.lastIndex=end+9;
   }
 }
-export async function inspectBytes(bytes,mime,{render=true}={}){
+export async function inspectBytes(bytes,mime){
   if(!Buffer.isBuffer(bytes)||bytes.length<1||bytes.length>limits.bytes)fail('FILE_LIMIT');
   const actual=bytes.subarray(0,5).toString()==='%PDF-'?'application/pdf':bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))?'image/png':bytes[0]===255&&bytes[1]===216&&bytes[2]===255?'image/jpeg':null;
   if(actual!==mime)fail('UNSUPPORTED_FILE');
@@ -128,9 +128,7 @@ export async function inspectBytes(bytes,mime,{render=true}={}){
     return {rawHash,mime,pages:[{page:1,method:'ocr'}]};
   }
   scanPdf(bytes);
-  const { createCanvas, DOMMatrix, ImageData, Path2D } = await import('@napi-rs/canvas');
-  globalThis.DOMMatrix=DOMMatrix;globalThis.ImageData=ImageData;globalThis.Path2D=Path2D;
-  const {getDocument,OPS,AnnotationMode}=await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const {getDocument,OPS}=await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task=getDocument({data:new Uint8Array(bytes),verbosity:0,stopAtErrors:true,isEvalSupported:false,enableXfa:false,
     useWorkerFetch:false,useSystemFonts:false,disableFontFace:true,disableAutoFetch:true,disableStream:true,
     maxImageSize:limits.pixels,canvasMaxAreaInBytes:80000000});
@@ -138,7 +136,7 @@ export async function inspectBytes(bytes,mime,{render=true}={}){
   try {
     doc=await task.promise;if(doc.numPages>limits.pages)fail('FILE_LIMIT');
     if(await doc.getJSActions()||await doc.getAttachments()||await doc.getOpenAction())fail('PDF_UNSAFE');
-    const pages=[];let characters=0,rasterBytes=0;
+    const pages=[];let characters=0;
     for(let n=1;n<=doc.numPages;n++){
       const page=await doc.getPage(n);if(await page.getJSActions())fail('PDF_UNSAFE');
       const viewport=page.getViewport({scale:200/72});shape(Math.ceil(viewport.width),Math.ceil(viewport.height));
@@ -158,11 +156,7 @@ export async function inspectBytes(bytes,mime,{render=true}={}){
       }
       if(text||!images)pages.push({page:n,method:'embedded',text});
       else {
-        if(!render){pages.push({page:n,method:'ocr'});page.cleanup();continue;}
-        const canvas=createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height));
-        await page.render({canvasContext:canvas.getContext('2d'),canvas,viewport,annotationMode:AnnotationMode.DISABLE}).promise;
-        const png=canvas.toBuffer('image/png');rasterBytes+=png.length;if(rasterBytes>limits.bytes)fail('FILE_LIMIT');
-        pages.push({page:n,method:'ocr',image:png.toString('base64'),mime:'image/png'});
+        pages.push({page:n,method:'ocr'});
       }
       page.cleanup();
     }
