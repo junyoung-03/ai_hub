@@ -92,3 +92,44 @@ test("anonymous analysis and foreign/missing ITEM cannot reach Gemini or service
   const foreign=load("src/lib/items/analysis.ts",{...dependencies,"@/lib/supabase/auth":{async requireUser(){return {id:"owner"};}},"@/lib/items/filters":{isItemId:()=>true},"@/lib/supabase/server":{async createClient(){return {from:()=>chain};}}});
   await assert.rejects(foreign.analyzeOwnedGmailItem("id"),e=>e.code==="ITEM_NOT_FOUND");
 });
+test("deadline evidence must contain deadline intent phrase, isolated date is rejected, event and deadline stay distinct", () => {
+  const baseNotice = "신청 마감일: 2026-10-31\n행사 일시: 2026-11-05";
+  const valid = fixture();
+  valid.actions[0].evidence = [quote("신청 마감일: 2026-10-31")];
+  valid.actions[0].deadlineObservation = {
+    status: "confirmed",
+    date: "2026-10-31",
+    datetime: null,
+    rawText: "2026-10-31",
+    evidence: quote("신청 마감일: 2026-10-31")
+  };
+  valid.eventObservations = [{
+    status: "confirmed",
+    date: "2026-11-05",
+    datetime: null,
+    rawText: "2026-11-05",
+    evidence: quote("행사 일시: 2026-11-05")
+  }];
+
+  // 1. Deadline normal with context -> validator PASS
+  const res = validator.validateAnalysis(valid, baseNotice);
+  assert.equal(res.actions[0].deadlineObservation.date, "2026-10-31");
+  assert.equal(res.actions[0].deadlineObservation.evidence?.text, "신청 마감일: 2026-10-31");
+
+  // 2. Event date only -> deadline cannot be created with event text
+  const eventAsDeadline = structuredClone(valid);
+  eventAsDeadline.actions[0].deadlineObservation.date = "2026-11-05";
+  eventAsDeadline.actions[0].deadlineObservation.rawText = "2026-11-05";
+  eventAsDeadline.actions[0].deadlineObservation.evidence = quote("행사 일시: 2026-11-05");
+  assert.throws(() => validator.validateAnalysis(eventAsDeadline, baseNotice), e => e.rule === "DEADLINE_ROLE");
+
+  // 3. Deadline + Event coexistence -> separate observations and dates
+  assert.equal(res.actions[0].deadlineObservation.date, "2026-10-31");
+  assert.equal(res.eventObservations[0].date, "2026-11-05");
+  assert.notEqual(res.actions[0].deadlineObservation.evidence?.text, res.eventObservations[0].evidence?.text);
+
+  // 4. Isolated date evidence -> DEADLINE_ROLE validator continues to reject
+  const isolatedDate = structuredClone(valid);
+  isolatedDate.actions[0].deadlineObservation.evidence = quote("2026-10-31");
+  assert.throws(() => validator.validateAnalysis(isolatedDate, baseNotice), e => e.rule === "DEADLINE_ROLE");
+});

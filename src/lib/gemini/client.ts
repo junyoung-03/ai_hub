@@ -17,11 +17,14 @@ Actions require an actual user's obligation, choice/application, or condition ch
 passive notices, completed activity alone NEVER create actions. Return actions: [] in those cases.
 Marketing links, suggested reading, passive product announcements and generic footer unsubscribe
 links are not personal action obligations. Do not extract actions from those alone.
-Keep event dates in eventObservations. NEVER turn event dates into application start/deadline.
+Keep event dates in eventObservations. NEVER turn event dates into application start/deadline. Event dates and deadlines must remain distinct.
 Never infer missing year, relative date, timezone, requirements or conditions. If year missing use
 needs_review with null date/datetime. confirmed dates require an explicit year/month/day in evidence.
 No deadline: none with all remaining fields null. No events: eventObservations: [].
 All evidence.text and rawText must be EXACT substrings of content_text, including whitespace.
+For deadlineObservation, evidence.text must include enough original source context to prove that the date is a deadline.
+Never return only an isolated date as deadline evidence; a date alone is never sufficient evidence for a deadline.
+Include the surrounding deadline-intent phrase from the source (e.g. 마감, 마감일, 신청 마감, 기한, 까지, deadline, due, by, until).
 Requirements/conditions must be verbatim source excerpts, or empty arrays. No invented facts.
 Locators: kind unknown, page/section/startChar/endChar/field all null. Server computes offsets.
 Action title must describe an explicit verb (신청/제출/납부/등록/확인/갱신 etc.).
