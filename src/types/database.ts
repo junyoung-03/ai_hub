@@ -511,6 +511,10 @@ export type Database = {
         }
         Returns: Json
       }
+      persist_eligible_item_analysis: {
+        Args: { p_user_id: string; p_item_id: string; p_content_text: string; p_content_hash: string | null; p_analysis: Json; p_model: string; p_input_fingerprint: string }
+        Returns: Json
+      }
       persist_drive_item: {
         Args: {
           p_user_id: string
@@ -582,10 +586,10 @@ export type Database = {
       }
       set_classification_override: {
         Args: {
-          p_document_type: Database["public"]["Enums"]["document_type"]
+          p_document_type: Database["public"]["Enums"]["document_type"] | null
           p_item_id: string
-          p_primary_topic: string
-          p_tags: string[]
+          p_primary_topic: string | null
+          p_tags: string[] | null
         }
         Returns: undefined
       }

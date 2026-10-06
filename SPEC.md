@@ -1326,3 +1326,33 @@ Today / Library / Search / Actions / Detail / Settings에 적용한다. 기존 A
   해당 기능을 로컬 임시 상태로 대체하지 않는다. importance 계약은 기존 후속 TODO를 유지한다.
 
 실제 검증과 Backend GAP은 `docs/POLISHED_UI_2_REPORT.md`에서 관리한다.
+
+## 39. FINAL BACKEND GAP FIX (2026-10-06)
+
+사용자의 이번 요청과 RPC 추가 승인이 38절의 분류/Action 쓰기 미구현 및 Gmail 수동 분석 한정 범위를 대체한다.
+Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기존 분류/Action/상태 위치에 동작만 연결한다.
+
+- 분류 수정은 기존 `set_classification_override`를 통해 user_*와 user_edited_at만 저장한다.
+  생략 필드는 기존 override 유지, null/빈 tags 의미는 기존 API 9절을 따른다. 초기화 버튼은 추가하지 않는다.
+  AI 값은 보존하고 Effective 값은 필드별 user override를 우선한다. 재분석은 AI 컬럼만 갱신한다.
+- Action 완료/복원은 기존 open/completed 및 completed_at만 사용한다. 동일 상태 재호출은 쓰지 않는다.
+  완료 시 서버 시각, 복원 시 null이다. 서버 인증·owner 조회 후 두 필드만 CAS 갱신하며 Source/Evidence/Deadline은 유지한다.
+  Actions는 기존 위치에서 완료 목록/복원을 지원한다. Search 기본 Action SQL은 계속 open만 반환한다.
+- 분석 eligibility: Gmail/email, Drive/document canonical text, 추출 완료된 Upload/pdf,image의 저장 canonical text.
+  Calendar/manual/지원하지 않는 format은 제외한다. Calendar 일정 날짜를 Action deadline으로 승격하지 않는다.
+- 수집 성공과 분석은 별도 요청이다. 해당 수집에서 정상 저장/재사용된 ITEM 중 미분석/본문·모델이 변경된 대상만 제안한다.
+  설정된 모델/0.2/input fingerprint가 현재 본문과 일치하면 skip한다. Upload는 최종 서버 저장 후 동일 endpoint로 분석한다.
+  브라우저가 한 작업당 최대 3건을 중복 제거 후 순차 처리하고, 각 요청은 ITEM 1건/기존 최대 120초 provider budget이다.
+  페이지를 닫으면 남은 브라우저 작업은 지속을 보장하지 않는다. Background worker/queue/cron 및 무제한 backfill은 도입하지 않는다.
+  대기/실패 ITEM은 Detail의 기존 분석 영역에서 사용자가 재시도한다. 수집/업로드는 AI 실패로 되돌리지 않는다.
+- 사용자에게 수집/업로드 후 본문 Gemini 전송을 안내한다. 이번 실제 검증은 합성 PDF 1건만 대상으로 한다.
+  개인 자료의 일괄 분석·semantic embedding backfill·Notion 수정·Production 배포는 하지 않는다.
+- 기존 Gmail atomic RPC는 그대로 유지한다. 승인된 `persist_eligible_item_analysis` 1개만 추가해
+  동일 원자적 분류/Action/Evidence 검증·저장을 Drive/Upload에도 제공한다. table/column/enum/RLS 변경은 없다.
+  후속 명시 승인에 따라 신규 RPC는 Drive/Upload만 허용하며 Gmail/Calendar는 거부한다.
+  20261006000216 후속 migration은 같은 RPC의 source guard만 제한한다. Gmail 기존 RPC는 변경하지 않는다.
+
+실제 모델 생성 503과 fixture 기반 검증을 구분한다. 구현/품질 검사 통과만으로 실제 AI 성공 E2E 또는 전체 MVP 완료를 주장하지 않는다.
+후속 검증에서 합성 PDF의 실제 모델 생성·검증·atomic 저장 및 사용자 override 보호를 확인했다.
+실제 결과의 최종 브라우저 Detail 확인은 로컬 연결 거부로 미완료다.
+상세 결과는 `docs/FINAL_BACKEND_GAP_REPORT.md`를 따른다.

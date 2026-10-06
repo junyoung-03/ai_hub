@@ -137,6 +137,7 @@ User Edited 데이터 쓰기, Google 원본 삭제, 개인 semantic backfill, No
 needs_review/none/completed, 부분 Drive grant와 공개 capability·민감 필드 제외를 검증한다.
 개발 서버 sandbox 네트워크 차단으로 최초 로그인 callback 실패, 네트워크 허용 후 실제 로그인 PASS.
 제품 인증 코드는 변경하지 않았다.
+최종 production build를 `npm run start`로 실행하고, 실제 로그인 세션의 Today 화면과 가로 넘침 없음을 브라우저에서 확인했다.
 
 ## 19. 남은 P0
 

@@ -11,8 +11,9 @@ function load(path, imports = {}, globals = {}) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
   runInNewContext(code, { exports, Buffer, TextEncoder, TextDecoder, URL, URLSearchParams, Request, Response,
-    AbortSignal, AbortController, Date, setTimeout, clearTimeout, ...globals,
+    AbortSignal, AbortController, Date, setTimeout, clearTimeout, process: { env: {} }, ...globals,
     require(name) { if (name === "server-only") return {}; if (name in imports) return imports[name];
+      if (name === "@/lib/items/analysis-policy") return load("src/lib/items/analysis-policy.ts");
       if (name.startsWith("node:")) return require(name); throw new Error(`Missing test dependency: ${name}`); },
   });
   return exports;
@@ -94,12 +95,18 @@ test("429/5xx retry only once, access errors never retry and missing Drive conse
   }
   await assert.rejects(clientWith(async () => { throw new Error("Unexpected request"); }, scopes.slice(0, 1)), /DRIVE_CONSENT_REQUIRED/);
 });
-function collector({ existing = null, before = file(), after = before, text = "Body", ids = ["file1"], limits, list } = {}) {
+function collector({ existing = null, before = file(), after = before, text = "Body", ids = ["file1"], limits, list, analysed = false, candidateError = false } = {}) {
   const calls = { docs: 0, metadata: 0, writes: [], inFlight: 0, peak: 0 };
   const fixtureContract = limits ? { ...contract, DRIVE_LIMITS: { ...contract.DRIVE_LIMITS, ...limits } } : contract;
   const reader = (connection = false) => {
-    const chain = { select() { return chain; }, eq() { return chain; }, is() { return chain; }, abortSignal() { return chain; },
-      async limit() { return { data: [{ id: "connection", status: "connected" }], error: null }; },
+    let candidates = false;
+    const chain = { select() { return chain; }, eq() { return chain; }, is() { return chain; }, abortSignal() { return chain; }, in() { candidates = true; return chain; },
+      async limit() {
+        if (!candidates) return { data: [{ id: "connection", status: "connected" }], error: null };
+        const p = load("src/lib/items/analysis-policy.ts");
+        return { data: [{ id: existing?.id ?? "new-item", source: "drive", format: "document", content_text: text,
+          metadata: analysed ? { aiAnalysis: { schemaVersion: "0.2", model: "gemini-fixture", inputFingerprint: p.analysisFingerprint(text, "gemini-fixture") } } : {} }], error: candidateError ? { code: "synthetic" } : null };
+      },
       async maybeSingle() { return { data: connection ? null : existing, error: null }; } };
     return chain;
   };
@@ -118,9 +125,14 @@ function collector({ existing = null, before = file(), after = before, text = "B
         await new Promise(r => setTimeout(r, 5)); calls.inFlight--; return { tabs: [tab(text, id)] }; },
       async children(...args) { return list ? list(...args) : { files: ids.map(id => file(id)), nextPageToken: null }; },
     }; } },
-  });
+  }, { process: { env: { GEMINI_MODEL: "gemini-fixture" } } });
   return { calls, collect: input => api.collectDrive(input ?? { mode: "files", fileIds: ids }) };
 }
+test("Drive successful persistence discovers unanalysed candidates, analysed skips and discovery errors preserve collection", async () => {
+  assert.equal((await collector().collect()).analysisItemIds.length, 1);
+  assert.equal((await collector({ analysed: true }).collect()).analysisItemIds.length, 0);
+  const r = await collector({ candidateError: true }).collect(); assert.equal(r.complete, true); assert.equal(r.analysisDiscoveryFailed, true); assert.equal(r.created, 1);
+});
 test("create, same modifiedTime reuse without body GET and changed source update all preserve ITEM identity contract", async () => {
   const created = collector(); assert.equal((await created.collect()).created, 1);
   assert.equal(created.calls.writes[0].p_expected_item_updated_at, null);

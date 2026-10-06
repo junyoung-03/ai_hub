@@ -7,6 +7,7 @@ import { getGoogleConnectionSummary } from "@/lib/google/connections";
 import { createGmailClient, GmailCollectionError, INITIAL_GMAIL_LIMIT, INITIAL_GMAIL_QUERY } from "@/lib/google/gmail-client";
 import { mapGmailMessage, record, type GmailItem } from "@/lib/google/gmail-message";
 import type { Json } from "@/types/database";
+import { analysisCurrent, analysisEligible } from "@/lib/items/analysis-policy";
 
 type Admin = ReturnType<typeof createAdminClient>;
 const active = new Set<string>();
@@ -88,13 +89,15 @@ export async function collectInitialGmail() {
     const historyId = await gmail.profile(); // Capture BEFORE enumeration, not after it.
     const { ids, capped } = await gmail.list();
     const counts = { collected_count: 0, created_count: 0, updated_count: 0, skipped_count: 0, failed_count: 0 };
+    const collectedIds: string[] = [];
     // Bound parallel Google requests and DB work; individual failures do not discard successes.
     for (let offset = 0; offset < ids.length; offset += 4) {
       await ensureConnected(admin, user.id, connection.id);
       const results = await Promise.allSettled(ids.slice(offset, offset + 4).map(async (id) => {
         const raw = await gmail.message(id);
         const mapped = mapGmailMessage(raw, id);
-        return saveGmailItem(admin, user.id, connection.id, mapped);
+        const outcome = await saveGmailItem(admin, user.id, connection.id, mapped);
+        collectedIds.push(id); return outcome;
       }));
       for (const result of results) {
         if (result.status === "fulfilled") {
@@ -108,6 +111,16 @@ export async function collectInitialGmail() {
     }
     const complete = counts.failed_count === 0;
     if (complete) await storeBaseline(admin, user.id, connection.id, historyId, capped);
-    return { ...counts, complete, capped, query: INITIAL_GMAIL_QUERY, max_messages: INITIAL_GMAIL_LIMIT };
+    // Candidate discovery is after collection commit and cannot turn collection success into failure.
+    let analysisItemIds: string[] = [], analysisDiscoveryFailed = false;
+    try {
+      if (collectedIds.length) {
+        const { data: rows, error: candidateError } = await cookieClient.from("items").select("id,source,format,content_text,metadata")
+          .eq("user_id", user.id).eq("connection_id", connection.id).eq("source", "gmail").in("external_id", collectedIds).limit(INITIAL_GMAIL_LIMIT);
+        if (candidateError || !rows) throw new Error();
+        analysisItemIds = rows.filter(row => analysisEligible(row) && !analysisCurrent(row, process.env.GEMINI_MODEL ?? "")).map(row => row.id);
+      }
+    } catch { analysisDiscoveryFailed = true; }
+    return { ...counts, complete, capped, query: INITIAL_GMAIL_QUERY, max_messages: INITIAL_GMAIL_LIMIT, analysisItemIds, analysisDiscoveryFailed };
   } finally { active.delete(key); }
 }

@@ -1281,3 +1281,65 @@ Google authorize/sync/drive collect/calendar collect/disconnect, Upload create/p
 Classification/Action 조회는 기존 persisted 값만 사용하고 User Edited 값을 수정하지 않는다.
 설계된 Classification PATCH / Action status PATCH / 독립 Action GET / 삭제 route는 아직 존재하지 않는다.
 현 통합에서 새로운 DB schema/RPC/권한/Migration 변경은 없다.
+
+## 27. FINAL BACKEND GAP FIX 계약 (2026-10-06)
+
+이 절은 26절의 쓰기 미구현 기록과 Gmail-only 실행 범위를 대체한다. 기존 9절/11절 route convention을 유지한다.
+
+### PATCH /api/v1/items/{itemId}/classification
+
+같은 Origin의 인증 사용자/ITEM owner만 허용한다. primaryTopic/documentType/tags 중 1개 이상만 허용하고
+unknown 필드·중복 소유권 입력·잘못된 ID/값은 거절한다. body 최대 8192 bytes.
+Topic trim/NFC 1~100 code points, documentType 기존 enum, tags null 또는 최대 20개(각 1~50 code points),
+control character 거절, tags trim/NFC/중복 제거. 기존 9절처럼 생략은 기존 override 유지, null은 해당 override 해제, []는 명시적 빈 tags다.
+기존 authenticated set_classification_override RPC를 재사용한다. 부분 PATCH는 현 override를 읽어 합친 후 RPC에 전달하며,
+동일 사용자의 동시 편집은 마지막 저장 snapshot이 우선한다. AI 재분석은 user 컬럼을 건드리지 않는다.
+
+Response: {aiClassification:{primaryTopic,documentType,tags},userClassification:{primaryTopic,documentType,tags}|null,
+effectiveClassification:{primaryTopic,documentType,tags,origin,available,origins},editedByUser,updatedAt,userEditedAt}.
+여기 updatedAt은 Classification row 시각이다. Detail의 기존 aiClassification/userClassification/effectiveClassification도 즉시 반영한다.
+401 anonymous / 404 foreign·없는·invalid ID / 400 입력 / 403 Origin / 413 size / 503 storage. private,no-store.
+
+### PATCH /api/v1/actions/{actionId}/status
+
+Body는 {status:"open"|"completed"}만 허용한다. client completedAt/userId/Deadline/Evidence 등의 필드는 거절한다.
+owner를 session/RLS SELECT로 확인한 뒤 서버에서 status/completed_at만 owner+updated_at+status CAS로 갱신한다.
+완료 시 서버 ISO 시각, 복원 시 null. 같은 상태는 기존 완료 시각/updatedAt까지 보존하며 쓰지 않는다.
+CAS 충돌은 최대 3회 재조회 후 409. Source/Evidence/ITEM/Deadline 변경 없음.
+Response: {actionId,status,completed,completedAt,updatedAt}. 인증·Origin·body 상한·오류 보안은 Classification과 동일하다.
+
+### GET /api/v1/actions
+
+기존 11절 query type/status/deadlineStatus/cursor/limit를 구현한다. status 기본 open, limit 기본20/최대50.
+알 수 없는 query·중복 파라미터·잘못된 enum/cursor는 400. owner/status/type/deadline 조건으로 created_at/id DESC keyset pagination.
+cursor는 기존 서버 Search secret을 사용한 HMAC이며 user/filter/limit에 묶인다. Search 결과 snapshot cursor와 호환되지 않는다.
+Response: {results:[Search Action과 동일한 안전한 kind/actionId/title/type/status/deadlineStatus/deadlineDate/deadlineAt/
+requirements/conditions/sources projection],nextCursor,limit,status}. current Evidence만 반환하고 raw metadata/analysisKey/credentials는 제외한다.
+완료/복원 뒤 새 조회를 실행한다. Search SQL도 계속 open만 반환하며 기존 snapshot은 updated_at 불일치 Action을 제외한다.
+
+### POST /api/v1/items/{itemId}/analyze
+
+기존 endpoint를 유지하되 owner Gmail/email, Drive/document, metadata.upload.extraction의
+version=upload-text-v1/status=complete인 Upload/pdf,image canonical text를 허용한다.
+Calendar/manual/지원하지 않는 format/빈·상한 초과 본문은 422이며 claim/provider/write를 하지 않는다.
+빈 body 또는 {}만 허용한다. userId/model/force/raw OCR 등 다른 필드는 400, body 최대8192 bytes.
+본문·모델·schemaVersion fingerprint가 같고 검증 가능한 저장 결과가 있으면 cached=true로 provider/write를 skip한다.
+queued/failed/indexing/completed에서 현재 updated_at으로 claim하고, analyzing 등의 상태는409이다.
+성공 응답은 기존 {cached,action_count,created_count,reused_count,processing_status}; raw Gemini response는 반환하지 않는다.
+Gmail은 기존 persist_gmail_item_analysis, Drive/Upload는 신규 서버 전용 persist_eligible_item_analysis로 atomic 저장한다.
+503/timeout/validation/저장 실패는 해당 claim만 실패 표시하며 원문/기존 분석/user override/다른 ITEM은 보존한다.
+Gemini 429/503은 기존 최초+2회/총120초 정책, validation/malformed는 retry하지 않는다.
+
+### 수집 후 bounded orchestration
+
+Gmail sync 및 Drive collect에 {analysisItemIds:string[],analysisDiscoveryFailed:boolean}를 추가한다.
+해당 작업에서 정상 저장·재사용한 owner ITEM 중 eligible/current analysis가 아닌 ID만 반환한다. 새로운 전역 backfill 목록이 아니다.
+후보 조회 실패는 기존 수집 결과를 실패로 바꾸지 않는다. 클라이언트는 최대3건 순차 analyze하며 부분 실패를 격리한다.
+Upload의 기존 저장 결과 itemId를 동일 흐름에 연결한다. Calendar 응답·분석 정책은 바꾸지 않는다.
+미실행 대상은 pending 수로 안내하고 Detail에서 수동 재시도한다. 새 worker/queue/RPC batch API는 추가하지 않는다.
+
+신규 additive RPC Migration 20261005162738_persist_eligible_item_analysis.sql은 승인 후 ai-hub-dev에만 적용했다.
+후속 명시 승인으로 20261006000216_restrict_eligible_analysis_to_drive_upload.sql을 적용해 같은 신규 RPC에서
+Gmail 허용 조건을 제거했다. 신규 RPC는 Drive/document 및 extraction 완료 Upload/pdf,image만 허용한다.
+anon/authenticated EXECUTE 불가, service_role 전용이며 owner+ITEM 조건을 유지한다. 추가 RPC는 총 1개다.
+Gmail 원본 RPC/table/column/enum/RLS/Storage policy 변경은 없다. 실제 생성 장애와 검증 범위는 docs/FINAL_BACKEND_GAP_REPORT.md를 따른다.

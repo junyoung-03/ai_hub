@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
 import { formatTimestamp } from "@/lib/items/presentation";
+import { runBoundedAnalysis } from "@/lib/items/browser-analysis";
 
 type Connection = {
   status: "connected" | "disconnected" | "error";
@@ -24,9 +25,14 @@ export function GoogleConnectionPanel({ connection, notice }: { connection: Conn
     try {
       const body = service === "calendar" ? {} : driveMode === "folder" ? { mode: "folder", folderId: driveTarget.trim() } : { mode: "files", fileIds: driveTarget.split(/[\s,]+/).filter(Boolean) };
       const response = await fetch(`/api/v1/connections/google/${service}/collect`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
-      const payload = await response.json() as { created: number; updated: number; reused: number; failed: number; unprocessed: number; complete: boolean; capped: boolean; error?: { message?: string } };
+      const payload = await response.json() as { created: number; updated: number; reused: number; failed: number; unprocessed: number; complete: boolean; capped: boolean; analysisItemIds?: string[]; analysisDiscoveryFailed?: boolean; error?: { message?: string } };
       if (!response.ok) throw new Error(payload.error?.message ?? "수집을 완료하지 못했습니다.");
       setSyncResult(`${service === "drive" ? "Drive" : "Calendar"}: 신규 ${payload.created} · 갱신 ${payload.updated} · 기존 ${payload.reused} · 실패 ${payload.failed} · 미처리 ${payload.unprocessed}${!payload.complete || payload.capped ? " · 일부 수집 (대상과 제한 확인 필요)" : " · 수집 완료"}`); router.refresh();
+      if (service === "drive") {
+        if (payload.analysisDiscoveryFailed) setMessage("수집 자료는 저장되었습니다. 상세에서 AI 분석을 재시도하세요.");
+        else await runBoundedAnalysis(payload.analysisItemIds ?? [], setMessage);
+        router.refresh();
+      }
     } catch (e) { setMessage(e instanceof Error ? e.message : "수집을 완료하지 못했습니다."); } finally { setPending(null); }
   }
 
@@ -44,6 +50,9 @@ export function GoogleConnectionPanel({ connection, notice }: { connection: Conn
       const values = fields.map((key) => key in payload ? payload[key as keyof typeof payload] : undefined);
       if (!values.every((value) => typeof value === "number" && Number.isInteger(value) && value >= 0)) throw new Error("Invalid collection result.");
       setSyncResult(`수집 ${values[0]}건 · 신규 ${values[1]}건 · 갱신 ${values[2]}건 · 기존 ${values[3]}건 · 실패 ${values[4]}건${"capped" in payload && payload.capped ? " (최대 100건 도달)" : ""}`);
+      router.refresh();
+      if ("analysisDiscoveryFailed" in payload && payload.analysisDiscoveryFailed) setMessage("메일은 저장되었습니다. 상세에서 AI 분석을 재시도하세요.");
+      else await runBoundedAnalysis("analysisItemIds" in payload && Array.isArray(payload.analysisItemIds) ? payload.analysisItemIds.filter((id): id is string => typeof id === "string") : [], setMessage);
       router.refresh();
     } catch { setMessage("메일 수집을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."); }
     finally { setPending(null); }
@@ -122,6 +131,7 @@ export function GoogleConnectionPanel({ connection, notice }: { connection: Conn
         <p className="mt-1 text-sm text-muted-foreground">
           Gmail · Drive · Calendar의 읽기 권한과 수집을 관리합니다. 서비스 로그인 계정과 다른 Google 계정을 연결할 수 있습니다.
         </p>
+        <p className="mt-1 text-sm text-muted-foreground">Gmail·Drive 수집 후 미분석·변경 자료의 본문을 Gemini로 보내 최대 3건씩 분석합니다. 민감한 자료는 수집하지 마세요. Calendar는 자동 분석에서 제외합니다.</p>
       </div>
 
       <dl className="grid gap-3 text-sm sm:grid-cols-[9rem_1fr]">

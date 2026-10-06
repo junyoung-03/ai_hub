@@ -1,9 +1,9 @@
 # PROJECT_STATE — 새 Codex 채팅 인계
 
-최종 갱신: 2026-10-05 (Asia/Seoul)
+최종 갱신: 2026-10-06 (Asia/Seoul)
 프로젝트: `C:\Users\MYCOM\ai_hub`
-현재 상태: **기존 Phase 1~6A/6B 및 Drive/Calendar/Upload/Search COMPLETE 유지. Polished UI 2.0 통합 구현·실제 Browser 검증 완료, 전체 MVP NEEDS_BACKEND_FIX.**
-현재 허용 범위: 사용자 신규 요청으로 Final Integration UI 작업을 진행했다. 최신 결과·제약은 18절 및 docs/POLISHED_UI_2_REPORT.md를 따른다. DB schema 변경/개인 semantic backfill/Notion 수정 미실행. 전체 MVP는 Backend GAP 해소 전 미완료.
+현재 상태: **기존 완료 단계 유지. FINAL BACKEND GAP FIX PARTIAL — Classification 수정·Action 완료/복원 검증 완료, 실제 Gemini 생성·저장·override 보호 PASS. 최종 실제 결과의 브라우저 Detail 재조회만 미완료.**
+현재 허용 범위: 사용자 요청 및 RPC 추가 승인에 따라 Backend GAP 3개를 구현했다. 최신 결과는 19절 및 docs/FINAL_BACKEND_GAP_REPORT.md를 따른다. 승인된 dev RPC 1개만 추가했고 개인자료 backfill/Notion 수정/디자인 고도화/Production 배포는 수행하지 않았다. 전체 MVP Backend Integration은 아직 미완료.
 
 ## 1. 기준과 작업 원칙
 
@@ -736,3 +736,50 @@ Search-1 COMPLETE / Search-2 COMPLETE / Search-3 COMPLETE. 이 절이 이전의 
   서비스 데이터 삭제 API 없음. 기존 개인 corpus semantic 색인은 별도 승인 전 계속 금지.
 - **RESULT NEEDS_BACKEND_FIX**: 기존 API를 사용하는 UI 통합은 구현했지만 전체 MVP 완료 아님.
   상세 22개 항목과 남은 P0/P1/P2는 docs/POLISHED_UI_2_REPORT.md.
+
+## 19. FINAL BACKEND GAP FIX (2026-10-06)
+
+사용자 신규 요청 및 “승인할게” 승인으로 18절의 Backend GAP 중 세 가지를 구현했다.
+기존 Phase/Search/Upload 완료 판정은 유지한다. 상세 26항목은 docs/FINAL_BACKEND_GAP_REPORT.md.
+
+- **Classification Edit COMPLETE**: owner PATCH 및 기존 override RPC 연결, Detail 수정/저장/직접 수정 표시.
+  AI 원본은 보존하고 effective 값은 user override를 우선한다. 실제 HTTP/RLS 및 browser fixture PASS.
+- **Action complete/restore COMPLETE**: 단일 status PATCH, 서버 completed_at, 멱등 처리,
+  owner/updated_at 조건 갱신. 완료 목록/복원 및 기본 Search 제외·재포함 PASS. Evidence/Deadline 보존.
+- **AI orchestration 구현 완료 / 성공 E2E 미완료**: 이번 Gmail/Drive collect 후보 및 Upload 저장 완료 후
+  canonical text를 최대 3개씩 순차 분석한다. current artifact는 skip, 부분 실패는 격리한다.
+  Drive/document 및 extraction 완료 Upload/pdf,image만 추가 대상이다. Calendar/manual은 제외한다.
+  대기 후보는 Detail 재시도하며 브라우저 종료 후 분석 지속을 보장하지 않는다.
+- **DB**: 승인된 dev migration 20261005162738로 persist_eligible_item_analysis 1개 추가.
+  기존 Gmail RPC/테이블/컬럼/enum/RLS/Storage 정책 변경 없음. 새 함수 service_role 전용.
+- **실제 Gemini 장애**: 합성 PDF 1건의 자동 분석 및 제한된 재시도가 HTTP 503으로 실패했다.
+  processing_error=GEMINI_UNAVAILABLE, ITEM/원본 및 기존 저장 결과·사용자 수정값 유지.
+  실패 테스트와 deterministic AI fixture 검증을 실제 모델 분석 성공으로 판정하지 않는다.
+- **Browser**: 합성 자료 업로드, 분류 저장, Action 완료/복원 PASS. Desktop/Mobile Detail 검증.
+  최종 build 후 IAB 추가 재접속은 연결 거부로 미검증(같은 시점 shell login HTTP 200).
+- **검사**: npm test 161 PASS(신규 25), 별도 gap SQL 7/Search SQL 11/실제 HTTP 8 PASS.
+  typecheck/lint/build/check:supabase/git diff --check PASS.
+- **보존**: 시작 실측 57 ITEM(Gmail 51/Drive 1/Calendar 1/Upload 4) 보존, 새 합성 PDF만 1개 유지.
+  최종 58 ITEM. 기존 비자격증명 corpus 비교 동일. 개인자료 backfill/credential hash 비교 없음.
+- **RESULT PARTIAL**: 구현 잔여 0, 완료 판정 검증 P0 1(실제 Gemini 합성 자료 성공 E2E).
+  FINAL BACKEND GAP FIX COMPLETE / MVP Backend Integration COMPLETE 모두 아니오.
+  Notion 수정/최종 UI redesign/Production 배포는 수행하지 않았다.
+
+### 후속 명시 승인 및 실제 AI 성공 검증
+
+위 장애/P0는 최초 보고 시점 기록이다. 다음 후속 기록이 현재 상태를 대체한다.
+
+- 사용자 조건에 따라 20261006000216 migration으로 같은 신규 RPC에서 Gmail 허용 조건만 제거했다.
+  신규 서버 전용 RPC는 총 1개이고 Drive/Upload만 허용한다. Calendar/Gmail 제외, browser 직접 실행 불가.
+  테이블/컬럼/RLS 및 Gmail 기존 RPC 변경 없음. dev만 적용, migration 전후 corpus 동일.
+- 동일 합성 PDF의 실제 분석 재시도에서 Gemini 503 후 200(2회 호출), v0.2 validation 및 atomic 저장 PASS.
+  사용자 수정 주제 유지, effective 우선, 실제 Action 1개/current Evidence 1개/이전 historical Evidence 1개.
+  confirmed deadline 2026-10-15와 정확한 원문 span 검증 PASS. 캐시 재호출은 provider 0회/cached=true.
+- 이 실제 분석 검증은 CLI service harness로 수행했다(인증 adapter 교체). 인증 경계는 실제 HTTP로 별도 검증했다.
+  최종 실제 모델 결과의 브라우저 Detail 확인은 IAB localhost 연결 거부로 미완료다.
+  추가 provider 호출/개인자료 분석은 필요하지 않으며 다음 단계는 기존 결과의 브라우저 확인이다.
+- npm test 재실행 161 PASS, gap SQL 7 PASS(Gmail 거부 포함), dev HTTP/RLS 8 PASS 및 합성 테스트 cleanup.
+  기존 typecheck/lint/build/check:supabase PASS 유지. 이번 후속 변경은 migration/source-boundary 테스트/문서뿐이다.
+- 외부 노출 가능성이 있는 0.0.0.0 실행은 자동 승인 검토가 거부했고 실행하지 않았다.
+  loopback 127.0.0.1 미리보기만 다시 시작했다. Production 배포 없음.
+- 현재 **PARTIAL / 구현 잔여 0 / 완료 검증 P0 1(실제 결과 브라우저 Detail 재조회)**.

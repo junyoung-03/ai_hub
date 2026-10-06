@@ -8,6 +8,7 @@ import { extractDocsText } from "@/lib/google/docs-text";
 import { DOCS_MIME, FOLDER_MIME, DriveError, DRIVE_LIMITS, object } from "@/lib/google/drive-contract";
 import type { DriveCollectionInput, DriveCollectionResult, DriveFile, DriveFileResult } from "@/types/drive";
 import type { Json } from "@/types/database";
+import { analysisCurrent, analysisEligible } from "@/lib/items/analysis-policy";
 
 const active = new Set<string>();
 export async function collectDrive(input: DriveCollectionInput): Promise<DriveCollectionResult> {
@@ -115,6 +116,15 @@ export async function collectDrive(input: DriveCollectionInput): Promise<DriveCo
     }
     for (const row of result.results) result[row.outcome]++;
     result.complete = !result.capped && !result.stopReason && result.failed === 0 && result.unprocessed === 0;
-    return result;
+    let analysisItemIds: string[] = [], analysisDiscoveryFailed = false;
+    try {
+      const ids = result.results.flatMap(row => row.itemId ? [row.itemId] : []);
+      if (ids.length) {
+        const { data: rows, error: candidateError } = await cookie.from("items").select("id,source,format,content_text,metadata").eq("user_id", user.id).in("id", ids).limit(DRIVE_LIMITS.files);
+        if (candidateError || !rows) throw new Error();
+        analysisItemIds = rows.filter(row => analysisEligible(row) && !analysisCurrent(row, process.env.GEMINI_MODEL ?? "")).map(row => row.id);
+      }
+    } catch { analysisDiscoveryFailed = true; }
+    return { ...result, analysisItemIds, analysisDiscoveryFailed };
   } finally { clearTimeout(timer); active.delete(key); }
 }

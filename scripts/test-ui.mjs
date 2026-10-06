@@ -12,6 +12,7 @@ const exports = {};
 vm.runInNewContext(source, { exports, Date, require(name) {
   if (name === "@/lib/items/presentation") return {};
   if (name === "next/link") return () => null;
+  if (name === "@/components/items/write-controls") return {};
   return require(name);
 } });
 const { deadlineLabel } = exports;

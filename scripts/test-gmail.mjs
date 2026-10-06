@@ -13,10 +13,11 @@ function load(path, imports = {}, globals = {}) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText;
   const exports = {};
-  runInNewContext(source, { exports, Buffer, TextDecoder, URL, URLSearchParams, Response, AbortSignal, Date, ...globals,
+  runInNewContext(source, { exports, Buffer, TextDecoder, URL, URLSearchParams, Response, AbortSignal, Date, process: { env: {} }, ...globals,
     require(name) {
       if (name === "server-only") return {};
       if (name in imports) return imports[name];
+      if (name === "@/lib/items/analysis-policy") return load("src/lib/items/analysis-policy.ts");
       if (name === "parse5") return parse5;
       if (name === "node:crypto") return require(name);
       throw new Error(`Unexpected dependency: ${name}`);
@@ -155,23 +156,26 @@ test("fixed query, pagination, unique IDs, hard 100 cap and per-message full GET
   assert.equal(h.requests.length, 3);
 });
 
-function collectionHarness({ status = "connected", foreign = false, failMessage = false, missingConnection = false } = {}) {
+function collectionHarness({ status = "connected", foreign = false, failMessage = false, missingConnection = false, candidateFailure = false } = {}) {
   const items = [], calls = [];
   let stamp = 0, baselineWrites = 0;
   const connection = { id: "connection", user_id: "owner", provider: "google", status, updated_at: "initial", sync_state: { gmail: { history_id: "90" }, retained: true } };
   function db() {
     return { from(table) {
-      let operation = "read", values, filters = [];
+      let operation = "read", values, filters = [], list = false;
       const query = {
         select() { return query; }, eq(key, value) { filters.push([key, value]); return query; },
         insert(value) { operation = "insert"; values = value; return query; },
         update(value) { operation = "update"; values = value; return query; },
+        in(key, value) { filters.push([key, value]); return query; },
+        limit() { list = true; return query; },
         async maybeSingle() { return execute(); }, then(resolve, reject) { return execute().then(resolve, reject); },
       };
       async function execute() {
         calls.push({ table, operation, filters, values });
         if (operation !== "insert") assert.ok(filters.some(([key, value]) => key === "user_id" && value === "owner"));
-        const matches = (row) => filters.every(([key, value]) => row[key] === value);
+        const matches = (row) => filters.every(([key, value]) => Array.isArray(value) ? value.includes(row[key]) : row[key] === value);
+        if (table === "items" && list) return candidateFailure ? { data: null, error: { code: "synthetic" } } : { data: items.filter(matches).map(r => ({ ...r })), error: null };
         if (table === "connections") {
           if (foreign || !matches(connection)) return { data: null, error: null };
           if (operation === "update") { Object.assign(connection, values, { updated_at: `stamp${++stamp}` }); baselineWrites++; }
@@ -202,9 +206,18 @@ function collectionHarness({ status = "connected", foreign = false, failMessage 
       async profile() { return "100"; }, async list() { return { ids: ["fixture1", "fixture2"], capped: false }; },
       async message(id) { if (failMessage && id === "fixture2") throw new Error("synthetic-private-message-error"); return message(id); },
     }; } },
-  });
+  }, { process: { env: { GEMINI_MODEL: "gemini-fixture" } } });
   return { collection, client, items, connection, calls, baselineWrites: () => baselineWrites };
 }
+
+test("Gmail committed collection offers only current-run unanalysed IDs; analysed skips and discovery failure keeps success", async () => {
+  const h = collectionHarness(), p = load("src/lib/items/analysis-policy.ts");
+  const first = await h.collection.collectInitialGmail(); assert.equal(first.analysisItemIds.length, 2);
+  for (const item of h.items) item.metadata.aiAnalysis = { schemaVersion: "0.2", model: "gemini-fixture", inputFingerprint: p.analysisFingerprint(item.content_text, "gemini-fixture") };
+  assert.equal((await h.collection.collectInitialGmail()).analysisItemIds.length, 0);
+  const failed = await collectionHarness({ candidateFailure: true }).collection.collectInitialGmail();
+  assert.equal(failed.complete, true); assert.equal(failed.analysisDiscoveryFailed, true); assert.equal(failed.created_count, 2);
+});
 
 test("collection creates queued Gmail ITEM; rerun skips; raw update preserves processing and metadata", async () => {
   const h = collectionHarness();

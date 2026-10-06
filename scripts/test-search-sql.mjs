@@ -67,6 +67,12 @@ try {
   assert.equal((await candidates('내일까지',{user:other})).length,0);
   await db.query("update public.actions set deadline_status='needs_review',deadline_date=null where id=$1",[id(20)]);assert.equal((await candidates('내일까지')).length,0);assert.equal((await candidates('해야 할 일')).length,1);
  });
+ await check('Action completion excludes fresh SQL and stale snapshot; restore reappears',async()=>{
+  const rows=await candidates('해야 할 일'),saved=await runtime('snapshot',{context:'status-change',version:c.ACTIVE_EMBEDDING.version,results:rows,info:{}});
+  await db.query("update public.actions set status='completed',updated_at=now() where id=$1",[id(20)]);assert.equal((await candidates('해야 할 일')).length,0);
+  assert.equal((await runtime('page',{session:saved.id,context:'status-change',version:c.ACTIVE_EMBEDDING.version,offset:0,limit:20})).results.length,0);
+  await db.query("update public.actions set status='open',updated_at=now() where id=$1",[id(20)]);assert.equal((await candidates('해야 할 일')).length,1);
+ });
  await check('snapshot pages are stable after insert and drop deleted/changed documents; owner-bound cursor',async()=>{
   const rows=await candidates('농협');const snapshot=await runtime('snapshot',{context:'test',version:c.ACTIVE_EMBEDDING.version,results:rows,info:{mode:'keyword_only'}});
   await seed(7,'gmail','농협 new','새 문서');const page={session:snapshot.id,context:'test',version:c.ACTIVE_EMBEDDING.version,offset:0,limit:20};

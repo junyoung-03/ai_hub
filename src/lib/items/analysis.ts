@@ -1,6 +1,7 @@
 import "server-only";
-import { createHash } from "node:crypto";
-import { analyzeGmailText, getGeminiConfig } from "@/lib/gemini/client";
+import { analysisEligible, analysisFingerprint } from "@/lib/items/analysis-policy";
+export { analysisFingerprint } from "@/lib/items/analysis-policy";
+import { analyzeGmailText, getGeminiConfig, GeminiAnalysisError } from "@/lib/gemini/client";
 import { AnalysisValidationError, validateAnalysis } from "@/lib/gemini/validation";
 import { isItemId } from "@/lib/items/filters";
 import { requireUser } from "@/lib/supabase/auth";
@@ -14,17 +15,14 @@ export class ItemAnalysisError extends Error {
 }
 type RecordValue = { [key: string]: Json | undefined };
 const record = (value: Json | undefined): RecordValue | null => value && typeof value === "object" && !Array.isArray(value) ? value : null;
-export function analysisFingerprint(contentText: string, model: string) {
-  return createHash("sha256").update(JSON.stringify({ schemaVersion: "0.2", model, contentText })).digest("hex");
-}
 type PersistenceInput = { userId: string; itemId: string; contentText: string;
-  contentHash: string | null; result: ItemAnalysis; model: string; fingerprint: string };
+  contentHash: string | null; result: ItemAnalysis; model: string; fingerprint: string; eligibleSource?: boolean };
 
 /** Entire RPC is the retry unit. Never retry only an Action/Evidence statement. */
 export async function persistValidatedAnalysis(admin: ReturnType<typeof createAdminClient>, input: PersistenceInput) {
   const result = validateAnalysis(input.result, input.contentText);
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { data, error } = await admin.rpc("persist_gmail_item_analysis", {
+    const { data, error } = await admin.rpc(input.eligibleSource ? "persist_eligible_item_analysis" : "persist_gmail_item_analysis", {
       p_user_id: input.userId, p_item_id: input.itemId, p_content_text: input.contentText,
       p_content_hash: input.contentHash, p_analysis: result as unknown as Json,
       p_model: input.model, p_input_fingerprint: input.fingerprint,
@@ -44,14 +42,19 @@ export async function persistValidatedAnalysis(admin: ReturnType<typeof createAd
 
 /** No request body/model-provided user_id can select the analysis owner. */
 export async function analyzeOwnedGmailItem(itemId: string) {
+  return analyzeOwnedItem(itemId, true);
+}
+export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   const user = await requireUser();
   if (!isItemId(itemId)) throw new ItemAnalysisError("ITEM_NOT_FOUND");
   const supabase = await createClient();
   const { data: item, error } = await supabase.from("items")
-    .select("id,content_text,content_hash,metadata,processing_status,updated_at")
-    .eq("id", itemId).eq("user_id", user.id).eq("source", "gmail").eq("format", "email").maybeSingle();
+    .select("id,source,format,content_text,content_hash,metadata,processing_status,updated_at")
+    .eq("id", itemId).eq("user_id", user.id).maybeSingle();
   if (error) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
   if (!item) throw new ItemAnalysisError("ITEM_NOT_FOUND");
+  if (gmailOnly && (item.source !== "gmail" || item.format !== "email")) throw new ItemAnalysisError("ITEM_NOT_FOUND");
+  if (!analysisEligible(item)) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   if (!item.content_text?.trim() || item.content_text.length > 200_000) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   const { model } = getGeminiConfig();
   const fingerprint = analysisFingerprint(item.content_text, model);
@@ -60,7 +63,7 @@ export async function analyzeOwnedGmailItem(itemId: string) {
     const cached = validateAnalysis(artifact.result, item.content_text);
     return { cached: true, action_count: cached.actions.length, created_count: 0, reused_count: cached.actions.length, processing_status: item.processing_status };
   }
-  if (!["queued", "failed", "indexing"].includes(item.processing_status)) throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
+  if (!["queued", "failed", "indexing", "completed"].includes(item.processing_status)) throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
   const { data: topics, error: topicError } = await supabase.from("classifications")
     .select("ai_primary_topic,user_primary_topic").eq("user_id", user.id).limit(200);
   if (topicError) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
@@ -76,9 +79,10 @@ export async function analyzeOwnedGmailItem(itemId: string) {
   try {
     const result = await analyzeGmailText(item.content_text, existingTopics);
     return await persistValidatedAnalysis(admin, { userId: user.id, itemId, contentText: item.content_text,
-      contentHash: item.content_hash, result, model, fingerprint });
+      contentHash: item.content_hash, result, model, fingerprint, eligibleSource: item.source !== "gmail" });
   } catch (failure) {
-    const safeError = failure instanceof AnalysisValidationError ? "ANALYSIS_VALIDATION_FAILED" : "ANALYSIS_FAILED";
+    const safeError = failure instanceof AnalysisValidationError ? "ANALYSIS_VALIDATION_FAILED"
+      : failure instanceof GeminiAnalysisError ? failure.code : "ANALYSIS_FAILED";
     await admin.from("items").update({ processing_status: "failed", processing_error: safeError })
       .eq("id", itemId).eq("user_id", user.id).eq("updated_at", claim.updated_at).eq("processing_status", "analyzing");
     throw failure;

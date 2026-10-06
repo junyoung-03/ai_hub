@@ -1,7 +1,9 @@
-import { analyzeOwnedGmailItem, ItemAnalysisError } from "@/lib/items/analysis";
+import { analyzeOwnedItem, ItemAnalysisError } from "@/lib/items/analysis";
 import { GeminiAnalysisError } from "@/lib/gemini/client";
 import { AnalysisValidationError } from "@/lib/gemini/validation";
 import { AuthenticationRequiredError } from "@/lib/supabase/auth";
+import { readWriteBody, writeErrorResponse } from "@/lib/items/write-http";
+import { ItemWriteError } from "@/lib/items/writes";
 export const runtime = "nodejs";
 export const maxDuration = 180;
 const reply = (data: unknown, status = 200) => Response.json(data, {
@@ -9,8 +11,13 @@ const reply = (data: unknown, status = 200) => Response.json(data, {
 });
 export async function POST(request: Request, context: { params: Promise<{ itemId: string }> }) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return reply({ error: { code: "FORBIDDEN", message: "허용되지 않은 요청입니다." } }, 403);
-  try { return reply(await analyzeOwnedGmailItem((await context.params).itemId)); }
+  try {
+    const body = await readWriteBody(request, true);
+    if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length) return reply({ error: { code: "VALIDATION_ERROR", message: "분석 요청에는 옵션을 지정할 수 없습니다." } }, 400);
+    return reply(await analyzeOwnedItem((await context.params).itemId));
+  }
   catch (error) {
+    if (error instanceof ItemWriteError) return writeErrorResponse(error);
     if (error instanceof AuthenticationRequiredError) return reply({ error: { code: "UNAUTHORIZED", message: "로그인이 필요합니다." } }, 401);
     if (error instanceof ItemAnalysisError) return reply({ error: { code: error.code, message: "현재 ITEM을 분석할 수 없습니다. 내용과 처리 상태를 확인해 주세요." } },
       error.code === "ITEM_NOT_FOUND" ? 404 : error.code === "ANALYSIS_IN_PROGRESS" ? 409 : error.code === "INVALID_ANALYSIS_INPUT" ? 422 : 503);

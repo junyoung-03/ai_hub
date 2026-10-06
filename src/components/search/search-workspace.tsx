@@ -23,8 +23,12 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
     abort.current?.abort(); const controller = new AbortController(); abort.current = controller;
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/v1/search", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: controller.signal,
-        body: JSON.stringify({ query: query.trim(), filters: { source: source ? [source] : [], format: format ? [format] : [], from: from || null, to: to || null }, limit: 20, semantic, cursor }) });
+      const directActions = actions && !today;
+      const parameters = new URLSearchParams({ status: tab === "completed" ? "completed" : "open", limit: "20" });
+      if (["required", "optional"].includes(tab)) parameters.set("type", tab);
+      if (cursor) parameters.set("cursor", cursor);
+      const response = await fetch(directActions ? `/api/v1/actions?${parameters}` : "/api/v1/search", { method: directActions ? "GET" : "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: controller.signal,
+        ...(directActions ? {} : { body: JSON.stringify({ query: query.trim(), filters: { source: source ? [source] : [], format: format ? [format] : [], from: from || null, to: to || null }, limit: 20, semantic, cursor }) }) });
       if (!response.ok) {
         if (response.status === 410) failedCursor.current = null;
         const wait = Number(response.headers.get("Retry-After"));
@@ -32,11 +36,13 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
         throw new Error(response.status === 401 ? "로그인이 만료되었습니다. 다시 로그인해 주세요." : response.status === 410 ? "검색 결과가 만료되었습니다. 다시 검색해 주세요." : "검색을 완료하지 못했습니다. 다시 시도해 주세요.");
       }
       const result = await response.json() as SearchPageResponse;
+      if (directActions) { result.mode = "action_sql"; result.appliedFilters = { dateBasis: "action_deadline", from: null, to: null }; result.degraded = false; result.warning = null; result.truncated = false; }
       if (!Array.isArray(result.results) || !(result.nextCursor === null || typeof result.nextCursor === "string")) throw new Error("검색 결과를 읽지 못했습니다.");
       if (!controller.signal.aborted) setPage(previous => cursor && previous ? { ...result, results: [...previous.results, ...result.results] } : result);
     } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "검색을 완료하지 못했습니다."); }
     finally { if (!controller.signal.aborted) setBusy(false); }
-  }, [query, source, format, from, to, semantic]);
+  }, [query, source, format, from, to, semantic, actions, today, tab]);
+  useEffect(() => { const refresh = () => { void run(); }; window.addEventListener("ai-hub:actions-changed", refresh); return () => window.removeEventListener("ai-hub:actions-changed", refresh); }, [run]);
   useEffect(() => {
     abort.current?.abort(); let active = true;
     void Promise.resolve().then(() => { if (active) { setPage(undefined); setError(""); setBusy(false); } });
@@ -50,7 +56,7 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
     {!actions && <section className="panel border-primary/20"><form onSubmit={event => { event.preventDefault(); if (Date.now() >= retryAt) void run(); }} className="flex flex-wrap gap-3"><label className="flex min-w-0 flex-1 items-center gap-3"><Search className="size-6 shrink-0 text-primary" aria-hidden="true"/><span className="sr-only">통합 검색어</span><input className="min-h-14 w-full bg-transparent text-lg outline-none" value={query} maxLength={500} onChange={event => setQuery(event.target.value)} placeholder="어떤 자료를 찾고 있나요?" /></label><button className="btn-primary" disabled={busy || !query.trim() || retryAt > 0}>검색</button></form><p className="mt-3 text-sm text-muted-foreground">메일, 문서, 일정과 이미지 속 내용까지. 검색 결과의 원문 근거를 함께 확인하세요.</p></section>}
     {!actions && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><label className="text-sm">출처<select className="field" value={source} onChange={e => setSource(e.target.value)}><option value="">모든 출처</option>{Object.entries(sourceLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label><label className="text-sm">형식<select className="field" value={format} onChange={e => setFormat(e.target.value)}><option value="">모든 형식</option>{Object.entries(formatLabels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label><label className="text-sm">원본 날짜 시작<input type="date" className="field" value={from} onInput={e=>setFrom(e.currentTarget.value)} onChange={e=>setFrom(e.target.value)} /></label><label className="text-sm">원본 날짜 종료<input type="date" className="field" value={to} onInput={e=>setTo(e.currentTarget.value)} onChange={e=>setTo(e.target.value)} /></label></div>}
     {!actions && <div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={semantic} onChange={e=>setSemantic(e.target.checked)} />의미 기반 검색 함께 사용</label><p className="meta mt-1">사용하면 검색어가 Gemini로 전송될 수 있습니다. 민감한 내용은 입력하지 마세요.</p></div>}
-    {actions && !today && <div className="flex flex-wrap gap-2" role="group" aria-label="진행 중인 할 일 필터">{[["all","전체"],["required","해야 할 일"],["optional","신청·선택"],["review","확인 필요"]].map(([v,l])=><button key={v} className={tab===v?"btn-primary":"btn-secondary"} aria-pressed={tab===v} onClick={()=>setTab(v)}>{l}</button>)}</div>}
+    {actions && !today && <div className="flex flex-wrap gap-2" role="group" aria-label="진행 중인 할 일 필터">{[["all","전체"],["required","해야 할 일"],["optional","신청·선택"],["review","확인 필요"],["completed","완료"]].map(([v,l])=><button key={v} className={tab===v?"btn-primary":"btn-secondary"} aria-pressed={tab===v} onClick={()=>setTab(v)}>{l}</button>)}</div>}
     <div aria-live="polite" className="space-y-4">
       {busy && <div role="status" className="panel"><p className="text-muted-foreground">{actions ? "할 일을 불러오는 중…" : "검색 결과를 찾는 중…"}</p><div className="mt-4 h-3 w-2/3 rounded bg-muted motion-safe:animate-pulse" /></div>}
       {error && <div role="alert" className="panel space-y-3"><p className="text-destructive">{error}</p><button className="btn-secondary" disabled={busy || retryAt > 0} onClick={()=>void run(failedCursor.current)}>다시 시도</button>{error.includes("로그인") && <Link className="ml-3 text-sm underline" href="/login">로그인</Link>}</div>}

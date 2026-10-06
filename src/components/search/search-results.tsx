@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatTimestamp, sourceLabels, formatLabels } from "@/lib/items/presentation";
 import type { SearchActionResult, SearchItemResult, SearchLocation } from "@/types/search-ui";
 import type { Action } from "@/types/items";
+import { ActionStateButton } from "@/components/items/write-controls";
 
 export function deadlineLabel(action: Pick<Action, "status" | "deadlineStatus" | "deadlineDate" | "deadlineAt"> | SearchActionResult, now = Date.now()) {
   if (action.status === "completed") return "완료";
@@ -25,6 +26,7 @@ export function ActionCard({ action, compact = false }: { action: SearchActionRe
     {!compact && action.requirements.length > 0 && <p className="text-sm break-words">필요한 것 · {action.requirements.join(" · ")}</p>}
     {!compact && action.conditions.length > 0 && <p className="text-sm break-words">적용 조건 · {action.conditions.join(" · ")}</p>}
     <div className="space-y-3 border-t pt-4">{(compact ? action.sources.slice(0, 1) : action.sources).map((source, i) => <div key={`${source.itemId}:${i}`}><blockquote className={`break-words border-l-2 border-primary/30 pl-3 text-sm ${compact ? "line-clamp-2" : ""}`}>{source.text}</blockquote><Location value={source.location} /><Link className="text-sm text-primary underline-offset-4 hover:underline" href={`/items/${source.itemId}`}>{source.title} →</Link></div>)}</div>
+    <ActionStateButton actionId={action.actionId} status={action.status}/>
   </article>;
 }
 export function SearchResultCard({ result }: { result: SearchItemResult }) {

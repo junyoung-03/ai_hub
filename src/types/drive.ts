@@ -9,6 +9,8 @@ export type DriveFailureCode = "ACCESS_UNAVAILABLE" | "SHARED_DRIVE" | "NOT_GOOG
   | "GOOGLE_UNAVAILABLE" | "REFRESH_FAILED" | "STORAGE_FAILED" | "CONNECTION_REQUIRED" | "DRIVE_CONSENT_REQUIRED";
 export type DriveFileResult = { fileId: string; outcome: DriveOutcome; itemId?: string; code?: DriveFailureCode };
 export type DriveCollectionResult = {
+  analysisItemIds?: string[];
+  analysisDiscoveryFailed?: boolean;
   results: DriveFileResult[]; created: number; updated: number; reused: number; excluded: number; failed: number; unprocessed: number;
   complete: boolean; capped: boolean; stopReason: "FILE_LIMIT" | "PAGE_LIMIT" | "RUN_BYTES_LIMIT" | "RUN_TIMEOUT" | "LIST_FAILED" | null;
   pagesRead: number; downloadedTextBytes: number; requestId: string;
