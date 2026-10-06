@@ -23,7 +23,7 @@ function resolveChildPath() {
 /** @param {Buffer} bytes @param {string} mime @param {{timeout?:number,signal?:AbortSignal,render?:boolean}} options */
 export function isolatedInspect(bytes,mime,{timeout=120000,signal,render=true}={}){
   const childPath = resolveChildPath();
-  if (childPath && existsSync(childPath)) {
+  if (childPath && existsSync(/*turbopackIgnore: true*/ childPath)) {
     return new Promise((resolve,reject)=>{
       if(signal?.aborted){reject(new Error('PROCESSING_TIMEOUT'));return;}
       // Runtime path is explicitly traced by Next config, not rewritten into a bundle URL.
@@ -37,7 +37,15 @@ export function isolatedInspect(bytes,mime,{timeout=120000,signal,render=true}={
       child.send({bytes:bytes.toString('base64'),mime,render});
     });
   }
-  return inspectBytes(bytes, mime, { render }).catch(error => {
-    throw new Error(typeof error?.code === 'string' ? error.code : 'INVALID_FILE');
+  return new Promise((resolve,reject)=>{
+    if(signal?.aborted){reject(new Error('PROCESSING_TIMEOUT'));return;}
+    let settled=false;
+    const finish=(error,result)=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);if(error)reject(new Error(error));else resolve(result);};
+    const abort=()=>finish('PROCESSING_TIMEOUT'),timer=setTimeout(abort,timeout);
+    signal?.addEventListener('abort',abort,{once:true});
+    inspectBytes(bytes,mime,{render}).then(
+      result=>finish(null,result),
+      error=>finish(typeof error?.code==='string'?error.code:'INVALID_FILE')
+    );
   });
 }

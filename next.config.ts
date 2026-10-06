@@ -7,14 +7,10 @@ const nextConfig: NextConfig = {
   agentRules: false,
   serverExternalPackages: ['sharp','@napi-rs/canvas','pdfjs-dist'],
   outputFileTracingIncludes: {
-    '/**': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/**/*': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/[uploadId]/prepare/route': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/[uploadId]/complete/route': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/[uploadId]/prepare': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/[uploadId]/complete': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/*/prepare': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
-    '/api/v1/uploads/*/complete': ['./workers/upload/**/*', 'workers/upload/**/*', './workers/upload/child.mjs', 'workers/upload/child.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/[uploadId]/prepare': ['./workers/upload/{child,parser}.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/[uploadId]/complete': ['./workers/upload/{child,parser}.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/*/prepare': ['./workers/upload/{child,parser}.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
+    '/api/v1/uploads/*/complete': ['./workers/upload/{child,parser}.mjs', './node_modules/{sharp,@img,@napi-rs,pdfjs-dist}/**/*'],
   },
   async headers(){return [
     {source:'/library',headers:[{key:'Content-Security-Policy',value:"worker-src 'self'; object-src 'none'; base-uri 'self'"}]},
