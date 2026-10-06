@@ -170,12 +170,3 @@
   .insight-section { @apply space-y-3 border-t pt-5; }
   .format-preview { @apply grid h-[76px] w-14 shrink-0 place-content-center gap-1 rounded-lg border border-line bg-canvas text-center text-xs text-muted-foreground; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}

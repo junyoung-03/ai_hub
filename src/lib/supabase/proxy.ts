@@ -47,7 +47,7 @@ export async function updateSession(request: NextRequest) {
 
   const { data, error } = await supabase.auth.getClaims();
   const pathname = request.nextUrl.pathname;
-  const protectedRoute =
+  const protectedRoute = pathname === "/" ||
     ["/library", "/items", "/search", "/actions", "/settings"].some(
       (path) => pathname === path || pathname.startsWith(`${path}/`),
     );
