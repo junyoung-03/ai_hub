@@ -4,10 +4,18 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 
 function resolveChildPath() {
+  const candidates = [];
   try {
-    const metaPath = fileURLToPath(new URL('./child.mjs', import.meta.url));
-    if (existsSync(metaPath)) return metaPath;
+    candidates.push(fileURLToPath(new URL('./child.mjs', import.meta.url)));
   } catch {}
+  candidates.push(
+    resolvePath(process.cwd(), 'workers/upload/child.mjs'),
+    resolvePath(process.cwd(), '.next/server/workers/upload/child.mjs'),
+    resolvePath(process.cwd(), 'app/workers/upload/child.mjs')
+  );
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
   return resolvePath(process.cwd(), 'workers/upload/child.mjs');
 }
 
@@ -16,7 +24,7 @@ export function isolatedInspect(bytes,mime,{timeout=120000,signal,render=true}={
   return new Promise((resolve,reject)=>{
     if(signal?.aborted){reject(new Error('PROCESSING_TIMEOUT'));return;}
     // Runtime path is explicitly traced by Next config, not rewritten into a bundle URL.
-    const child=Reflect.apply(fork,undefined,[resolveChildPath(),[],{env:{},execArgv:['--max-old-space-size=192'],stdio:['ignore','ignore','ignore','ipc']}]);
+    const child=Reflect.apply(fork,undefined,[resolveChildPath(),[],{execArgv:['--max-old-space-size=192'],stdio:['ignore','ignore','ignore','ipc']}]);
     let settled=false;
     const finish=(error,result)=>{if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);child.kill();if(error)reject(new Error(error));else resolve(result);};
     const abort=()=>finish('PROCESSING_TIMEOUT'),timer=setTimeout(abort,timeout);
