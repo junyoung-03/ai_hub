@@ -5,7 +5,15 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getSupabaseConfig } from "@/lib/supabase/env";
 
-export function GoogleSignInButton() {
+export function GoogleSignInButton({
+  label = "Google로 로그인",
+  pendingLabel = "Google 로그인으로 이동 중…",
+  className,
+}: {
+  label?: string;
+  pendingLabel?: string;
+  className?: string;
+} = {}) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -43,9 +51,17 @@ export function GoogleSignInButton() {
   }
 
   return (
-    <div className="space-y-3">
-      <button type="button" onClick={signIn} disabled={pending} className="min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50">
-        {pending ? "Google 로그인으로 이동 중…" : "Google로 로그인"}
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={signIn}
+        disabled={pending}
+        className={
+          className ??
+          "min-h-11 w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+        }
+      >
+        {pending ? pendingLabel : label}
       </button>
       {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
     </div>
