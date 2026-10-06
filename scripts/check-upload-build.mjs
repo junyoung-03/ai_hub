@@ -7,7 +7,7 @@ const routes=['prepare','complete'];
 for(const route of routes){
   const file=`.next/server/app/api/v1/uploads/[uploadId]/${route}/route.js.nft.json`;
   const paths=JSON.parse(readFileSync(file)).files.map(p=>resolve(dirname(file),p));
-  for(const tail of ['workers/upload/child.mjs','workers/upload/parser.mjs','node_modules/sharp/dist/index.cjs','node_modules/pdfjs-dist/legacy/build/pdf.mjs'])assert.ok(paths.some(p=>p.replaceAll('\\','/').endsWith(tail)&&existsSync(p)),`Tracing missing ${tail}`);
+  for(const tail of ['workers/upload/child.mjs','workers/upload/parser.mjs','node_modules/pdfjs-dist/legacy/build/pdf.mjs'])assert.ok(paths.some(p=>p.replaceAll('\\','/').endsWith(tail)&&existsSync(p)),`Tracing missing ${tail}`);
   const bytes=paths.reduce((n,p)=>n+(existsSync(p)&&statSync(p).isFile()?statSync(p).size:0),0);assert.ok(bytes<250*1024*1024,'Function tracing exceeds standard Vercel size');
 }
 const port=3002,origin=`http://localhost:${port}`;

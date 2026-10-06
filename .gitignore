@@ -144,3 +144,4 @@ vite.config.ts.timestamp-*
 
 # Reproducible Upload OCR Worker/WASM/language assets (prepare:upload-assets).
 public/ocr/
+.vercel

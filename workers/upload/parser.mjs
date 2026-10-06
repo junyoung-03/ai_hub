@@ -1,12 +1,75 @@
 // Untrusted bytes only. Imported in a credential-free child; no Storage/DB/OCR clients.
 import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { createCanvas, DOMMatrix, ImageData, Path2D } from '@napi-rs/canvas';
-import sharp from 'sharp';
 const limits={bytes:5000000,pages:10,pixels:20000000,side:10000,expanded:64000000,text:100000};
 export class ParserError extends Error { constructor(code){super(code);this.code=code;} }
 const fail=code=>{throw new ParserError(code);};
 const shape=(width,height)=>{if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<1||height<1||width>limits.side||height>limits.side||width*height>limits.pixels)fail('FILE_LIMIT');};
+function parseImageHeader(bytes, mime) {
+  if (mime === 'image/png') {
+    if (bytes.length < 33) fail('INVALID_FILE');
+    const ihdrLen = bytes.readUInt32BE(8);
+    if (ihdrLen !== 13) fail('INVALID_FILE');
+    if (bytes.subarray(12, 16).toString('ascii') !== 'IHDR') fail('INVALID_FILE');
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    const bitDepth = bytes[24];
+    const colorType = bytes[25];
+    const compression = bytes[26];
+    const filter = bytes[27];
+    const interlace = bytes[28];
+    if (width < 1 || height < 1) fail('INVALID_FILE');
+    if (compression !== 0 || filter !== 0 || (interlace !== 0 && interlace !== 1)) fail('INVALID_FILE');
+    if (![1, 2, 4, 8, 16].includes(bitDepth)) fail('INVALID_FILE');
+    if (![0, 2, 3, 4, 6].includes(colorType)) fail('INVALID_FILE');
+    let offset = 8;
+    let hasIEND = false;
+    while (offset + 12 <= bytes.length) {
+      const len = bytes.readUInt32BE(offset);
+      if (len > 0x7FFFFFFF || offset + 12 + len > bytes.length) fail('INVALID_FILE');
+      const type = bytes.subarray(offset + 4, offset + 8).toString('ascii');
+      if (type === 'acTL') fail('UNSUPPORTED_FILE');
+      offset += 12 + len;
+      if (type === 'IEND') {
+        hasIEND = true;
+        break;
+      }
+    }
+    if (!hasIEND) fail('INVALID_FILE');
+    return { width, height };
+  }
+  if (mime === 'image/jpeg') {
+    if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) fail('INVALID_FILE');
+    let offset = 2;
+    let width = 0, height = 0, foundSOF = false;
+    while (offset < bytes.length) {
+      if (bytes[offset] !== 0xFF) fail('INVALID_FILE');
+      while (offset < bytes.length && bytes[offset] === 0xFF) offset++;
+      if (offset >= bytes.length) fail('INVALID_FILE');
+      const marker = bytes[offset++];
+      if (marker === 0xD9) break;
+      if (marker === 0xD8 || marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) continue;
+      if (offset + 2 > bytes.length) fail('INVALID_FILE');
+      const len = bytes.readUInt16BE(offset);
+      if (len < 2 || offset + len > bytes.length) fail('INVALID_FILE');
+      if ([0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF].includes(marker)) {
+        if (foundSOF) fail('UNSUPPORTED_FILE');
+        if (len < 8) fail('INVALID_FILE');
+        const h = bytes.readUInt16BE(offset + 3);
+        const w = bytes.readUInt16BE(offset + 5);
+        if (h < 1 || w < 1) fail('INVALID_FILE');
+        height = h;
+        width = w;
+        foundSOF = true;
+      }
+      if (marker === 0xDA) break;
+      offset += len;
+    }
+    if (!foundSOF) fail('INVALID_FILE');
+    return { width, height };
+  }
+  fail('UNSUPPORTED_FILE');
+}
 function scanPdf(bytes){
   const raw=bytes.toString('latin1');
   if(!raw.startsWith('%PDF-')||!/%EOF\s*$/.test(raw))fail('INVALID_FILE');
@@ -57,17 +120,15 @@ export async function inspectBytes(bytes,mime,{render=true}={}){
   if(actual!==mime)fail('UNSUPPORTED_FILE');
   const rawHash=createHash('sha256').update(bytes).digest('hex');
   if(mime!=='application/pdf') {
-    let meta,image;
-    try {meta=await sharp(bytes,{limitInputPixels:false,failOn:'warning'}).metadata();shape(meta.width,meta.height);
-      if(meta.pages&&meta.pages!==1)fail('UNSUPPORTED_FILE');
-      if(meta.format!==(mime==='image/png'?'png':'jpeg'))fail('UNSUPPORTED_FILE');
-      // Full decode validates compressed pixels; derivative strips EXIF, original stays unchanged.
-      image=await sharp(bytes,{limitInputPixels:limits.pixels,failOn:'warning'}).rotate().png().toBuffer();
+    let dims;
+    try {
+      dims=parseImageHeader(bytes,mime);
+      shape(dims.width,dims.height);
     }catch(error){if(error instanceof ParserError)throw error;fail('INVALID_FILE');}
-    if(image.length>limits.bytes)fail('FILE_LIMIT');
-    return {rawHash,mime,pages:[{page:1,method:'ocr',image:image.toString('base64'),mime:'image/png'}]};
+    return {rawHash,mime,pages:[{page:1,method:'ocr'}]};
   }
   scanPdf(bytes);
+  const { createCanvas, DOMMatrix, ImageData, Path2D } = await import('@napi-rs/canvas');
   globalThis.DOMMatrix=DOMMatrix;globalThis.ImageData=ImageData;globalThis.Path2D=Path2D;
   const {getDocument,OPS,AnnotationMode}=await import('pdfjs-dist/legacy/build/pdf.mjs');
   const task=getDocument({data:new Uint8Array(bytes),verbosity:0,stopAtErrors:true,isEvalSupported:false,enableXfa:false,

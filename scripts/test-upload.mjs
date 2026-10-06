@@ -41,8 +41,79 @@ test('parser blocks oversized, encrypted, corrupt, script, launch, embedded file
   for(const [bytes,mime,code] of cases)await assert.rejects(isolatedInspect(bytes,mime),{message:code});
   const large=await imageFixture('png',10001,1);await assert.rejects(isolatedInspect(large,'image/png'),{message:'FILE_LIMIT'});
   const pixels=await imageFixture('png',5000,4001);await assert.rejects(isolatedInspect(pixels,'image/png'),{message:'FILE_LIMIT'});
-  const corrupt=pdfFixture();const at=corrupt.indexOf(Buffer.from('0000000009'));if(at>=0)corrupt[at+9]=56;
   await assert.rejects(isolatedInspect(pdfFixture().subarray(0,-20),'application/pdf'),{message:'INVALID_FILE'});
+});
+test('image parser verifies valid PNG/JPEG, dimensions, and rejects spoofing/truncation/APNG',async()=>{
+  const validPng=await imageFixture('png',16,12);
+  const validJpg=await imageFixture('jpeg',16,12);
+  const pngPlan=await isolatedInspect(validPng,'image/png');
+  assert.equal(pngPlan.pages.length,1);assert.equal(pngPlan.pages[0].method,'ocr');
+  const jpgPlan=await isolatedInspect(validJpg,'image/jpeg');
+  assert.equal(jpgPlan.pages.length,1);assert.equal(jpgPlan.pages[0].method,'ocr');
+
+  // MIME spoofing
+  await assert.rejects(isolatedInspect(validPng,'image/jpeg'),{message:'UNSUPPORTED_FILE'});
+  await assert.rejects(isolatedInspect(validPng,'application/pdf'),{message:'UNSUPPORTED_FILE'});
+  await assert.rejects(isolatedInspect(validJpg,'image/png'),{message:'UNSUPPORTED_FILE'});
+
+  // 10,001px and >20MP
+  const wide=await imageFixture('png',10001,1);
+  await assert.rejects(isolatedInspect(wide,'image/png'),{message:'FILE_LIMIT'});
+  const tall=await imageFixture('png',1,10001);
+  await assert.rejects(isolatedInspect(tall,'image/png'),{message:'FILE_LIMIT'});
+  const largePixels=await imageFixture('png',5000,4001);
+  await assert.rejects(isolatedInspect(largePixels,'image/png'),{message:'FILE_LIMIT'});
+
+  // Truncated PNG
+  await assert.rejects(isolatedInspect(validPng.subarray(0,30),'image/png'),{message:'INVALID_FILE'});
+  await assert.rejects(isolatedInspect(validPng.subarray(0,validPng.length-8),'image/png'),{message:'INVALID_FILE'});
+
+  // Truncated JPEG
+  await assert.rejects(isolatedInspect(validJpg.subarray(0,4),'image/jpeg'),{message:'INVALID_FILE'});
+  await assert.rejects(isolatedInspect(validJpg.subarray(0,30),'image/jpeg'),{message:'INVALID_FILE'});
+
+  // APNG (acTL chunk before IEND)
+  const apng=Buffer.concat([validPng.subarray(0,validPng.length-12),Buffer.from([0,0,0,8,0x61,0x63,0x54,0x4C,0,0,0,1,0,0,0,1,0,0,0,0]),validPng.subarray(validPng.length-12)]);
+  await assert.rejects(isolatedInspect(apng,'image/png'),{message:'UNSUPPORTED_FILE'});
+});
+test('Vercel runtime executes in-process without fork for PNG/JPEG, while non-Vercel retains fork',async()=>{
+  const validPng=await imageFixture('png',16,12);
+  const validJpg=await imageFixture('jpeg',16,12);
+  const origVercel=process.env.VERCEL;
+  try {
+    // 1. Vercel env flag + PNG -> fork is NOT called
+    process.env.VERCEL = '1';
+    let forkCallsPng = 0;
+    const planPng = await isolatedInspect(validPng, 'image/png', { _fork: () => { forkCallsPng++; } });
+    assert.equal(forkCallsPng, 0, 'fork must not be called for PNG in Vercel runtime');
+    assert.equal(planPng.pages[0].method, 'ocr');
+
+    // 2. Vercel env flag + JPEG -> fork is NOT called
+    let forkCallsJpg = 0;
+    const planJpg = await isolatedInspect(validJpg, 'image/jpeg', { _fork: () => { forkCallsJpg++; } });
+    assert.equal(forkCallsJpg, 0, 'fork must not be called for JPEG in Vercel runtime');
+    assert.equal(planJpg.pages[0].method, 'ocr');
+
+    // 3. Corrupt image rejection in Vercel in-process mode
+    await assert.rejects(isolatedInspect(Buffer.from([137,80,78,71,13,10,26,10,0,0]), 'image/png'), { message: 'INVALID_FILE' });
+    await assert.rejects(isolatedInspect(Buffer.from([255,216,255,0,0]), 'image/jpeg'), { message: 'INVALID_FILE' });
+
+    // 4. Non-Vercel + PNG -> existing fork retained
+    delete process.env.VERCEL;
+    let forkCallsNonVercel = 0;
+    const { fork } = await import('node:child_process');
+    const planLocal = await isolatedInspect(validPng, 'image/png', {
+      _fork: (...args) => {
+        forkCallsNonVercel++;
+        return fork(...args);
+      }
+    });
+    assert.equal(forkCallsNonVercel, 1, 'fork must be called for PNG in non-Vercel runtime');
+    assert.equal(planLocal.pages[0].method, 'ocr');
+  } finally {
+    if (origVercel !== undefined) process.env.VERCEL = origVercel;
+    else delete process.env.VERCEL;
+  }
 });
 test('text never truncates; empty OCR fails; safe Detail excludes raw hash, filename, credential and provider response',()=>{
   assert.throws(()=>c.assemble([{text:'x'.repeat(100001),method:'ocr',confidence:null}]),{code:'TEXT_LIMIT'});
