@@ -10,6 +10,7 @@ export function analysisEligible(item: Input) {
   if (!item.content_text?.trim() || item.content_text.length > 200_000) return false;
   if (item.source === "gmail") return item.format === "email";
   if (item.source === "drive") return item.format === "document";
+  if (item.source === "manual") return item.format === "text";
   const extraction = record(record(record(item.metadata).upload).extraction);
   return item.source === "upload" && ["pdf", "image"].includes(item.format)
     && extraction.status === "complete" && extraction.version === "upload-text-v1";

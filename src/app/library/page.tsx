@@ -6,6 +6,7 @@ import { requirePageUser } from "@/lib/supabase/auth";
 import { InvalidItemQueryError, libraryUrl, parseItemQuery } from "@/lib/items/filters";
 import { listItems, type ItemList } from "@/lib/items/queries";
 import {UploadControls} from '@/components/uploads/upload-controls';
+import {ManualTextControls} from '@/components/items/manual-text-controls';
 
 export default async function LibraryPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user=await requirePageUser();
@@ -25,7 +26,9 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   catch { /* Keep raw Auth/DB errors out of UI and logs. */ }
   return (
     <AppShell title="자료">
-      <p className="mb-6 text-sm text-muted-foreground">메일, 문서, 일정과 직접 올린 자료를 한곳에서 확인하세요.</p><UploadControls key={user.id} userId={user.id} />
+      <p className="mb-6 text-sm text-muted-foreground">메일, 문서, 일정과 직접 올린 자료를 한곳에서 확인하세요.</p>
+      <UploadControls key={user.id} userId={user.id} />
+      <ManualTextControls key={`manual-${user.id}`} userId={user.id} />
       <LibraryFilters query={query} />
       {!result ? <div role="alert" className="space-y-3"><p>자료를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p><a href={libraryUrl(query)} className="text-sm underline">다시 불러오기</a></div>
         : <>

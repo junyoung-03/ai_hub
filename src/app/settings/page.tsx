@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/shell/app-shell";
 import { GoogleConnectionPanel } from "@/components/connections/google-connection-panel";
-import { getGoogleConnectionSummary } from "@/lib/google/connections";
+import { getGoogleConnectionSummary, getGoogleServicesSyncSummary } from "@/lib/google/connections";
 import { requirePageUser } from "@/lib/supabase/auth";
 
 const NOTICES: Record<string, string> = {
@@ -17,14 +17,17 @@ const NOTICES: Record<string, string> = {
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePageUser();
-  const connection = await getGoogleConnectionSummary(user.id);
+  const [connection, syncSummary] = await Promise.all([
+    getGoogleConnectionSummary(user.id),
+    getGoogleServicesSyncSummary(user.id),
+  ]);
   const value = (await searchParams).connection;
   const result = typeof value === "string" ? value : null;
   const notice = result && Object.hasOwn(NOTICES, result) ? NOTICES[result] : null;
 
   return (
     <AppShell title="설정 · 연결">
-      <GoogleConnectionPanel connection={connection} notice={notice} />
+      <GoogleConnectionPanel connection={connection} syncSummary={syncSummary} notice={notice} />
     </AppShell>
   );
 }

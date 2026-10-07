@@ -54,7 +54,7 @@ export async function saveGmailItem(admin: Admin, userId: string, connectionId: 
   throw new GmailCollectionError("STORAGE_FAILED");
 }
 
-async function storeBaseline(admin: Admin, userId: string, connectionId: string, historyId: string, capped: boolean) {
+async function storeBaseline(admin: Admin, userId: string, connectionId: string, historyId: string, capped: boolean, counts?: Record<string, number>) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const current = await ensureConnected(admin, userId, connectionId);
     const state = record(current.sync_state), gmail = record(state.gmail);
@@ -62,6 +62,15 @@ async function storeBaseline(admin: Admin, userId: string, connectionId: string,
     const now = new Date().toISOString();
     const { data, error } = await admin.from("connections").update({ last_synced_at: now, sync_state: {
       ...state, gmail: { ...gmail, history_id: BigInt(previous) > BigInt(historyId) ? previous : historyId,
+        last_synced_at: now,
+        last_result: counts ? {
+          collected_count: counts.collected_count,
+          created_count: counts.created_count,
+          updated_count: counts.updated_count,
+          skipped_count: counts.skipped_count,
+          failed_count: counts.failed_count,
+        } : (gmail.last_result ?? null),
+        last_error: null,
         initial_collection: { completed_at: now, history_id: historyId, query: INITIAL_GMAIL_QUERY, max_messages: INITIAL_GMAIL_LIMIT, capped } },
     } as Json }).eq("id", connectionId).eq("user_id", userId).eq("provider", "google").eq("status", "connected")
       .eq("updated_at", current.updated_at).select("id").maybeSingle();
@@ -110,7 +119,7 @@ export async function collectInitialGmail() {
       }
     }
     const complete = counts.failed_count === 0;
-    if (complete) await storeBaseline(admin, user.id, connection.id, historyId, capped);
+    if (complete) await storeBaseline(admin, user.id, connection.id, historyId, capped, counts);
     // Candidate discovery is after collection commit and cannot turn collection success into failure.
     let analysisItemIds: string[] = [], analysisDiscoveryFailed = false;
     try {

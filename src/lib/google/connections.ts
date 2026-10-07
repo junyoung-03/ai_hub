@@ -41,6 +41,29 @@ export function assertGoogleConnectionStorageReady(): void {
   }
 }
 
+export type GoogleServiceSyncStatus = "connected" | "disconnected" | "syncing" | "error" | "reconnect_required";
+
+export type GoogleServiceSyncSummary = {
+  status: GoogleServiceSyncStatus;
+  lastSyncedAt: string | null;
+  lastResult: Record<string, unknown> | null;
+  error?: string | null;
+};
+
+export type GoogleConnectionDetailSummary = {
+  googleAccount: {
+    email: string | null;
+    connected: boolean;
+    status: "connected" | "disconnected" | "error";
+    lastSyncedAt: string | null;
+  };
+  services: {
+    gmail: GoogleServiceSyncSummary;
+    drive: GoogleServiceSyncSummary;
+    calendar: GoogleServiceSyncSummary;
+  };
+};
+
 export async function getGoogleConnectionSummary(userId: string): Promise<GoogleConnectionSummary | null> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -67,6 +90,124 @@ export async function getGoogleConnectionSummary(userId: string): Promise<Google
         },
       }
     : null;
+}
+
+export async function getGoogleServicesSyncSummary(userId: string): Promise<GoogleConnectionDetailSummary> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("connections")
+    .select("id,status,account_email,last_synced_at,scopes,sync_state")
+    .eq("user_id", userId)
+    .eq("provider", "google")
+    .order("updated_at", { ascending: false })
+    .limit(2);
+
+  if (error) throw new Error("Unable to read Google connection sync state.");
+  const connection = data && data.length > 0 ? data[0] : null;
+
+  if (!connection || connection.status !== "connected") {
+    return {
+      googleAccount: {
+        email: connection?.account_email ?? null,
+        connected: false,
+        status: connection?.status ?? "disconnected",
+        lastSyncedAt: connection?.last_synced_at ?? null,
+      },
+      services: {
+        gmail: { status: "disconnected", lastSyncedAt: null, lastResult: null },
+        drive: { status: "disconnected", lastSyncedAt: null, lastResult: null },
+        calendar: { status: "disconnected", lastSyncedAt: null, lastResult: null },
+      },
+    };
+  }
+
+  const scopes = Array.isArray(connection.scopes) ? connection.scopes : [];
+  const hasGmailScope = scopes.includes("https://www.googleapis.com/auth/gmail.readonly");
+  const hasDriveScope = ["https://www.googleapis.com/auth/drive.metadata.readonly", "https://www.googleapis.com/auth/documents.readonly"].every(s => scopes.includes(s));
+  const hasCalendarScope = scopes.includes("https://www.googleapis.com/auth/calendar.events.owned.readonly");
+
+  const syncState = (connection.sync_state && typeof connection.sync_state === "object" && !Array.isArray(connection.sync_state))
+    ? (connection.sync_state as Record<string, unknown>)
+    : {};
+  const gmailSync = (syncState.gmail && typeof syncState.gmail === "object" && !Array.isArray(syncState.gmail))
+    ? (syncState.gmail as Record<string, unknown>)
+    : {};
+  const driveSync = (syncState.drive && typeof syncState.drive === "object" && !Array.isArray(syncState.drive))
+    ? (syncState.drive as Record<string, unknown>)
+    : {};
+  const calendarSync = (syncState.calendar && typeof syncState.calendar === "object" && !Array.isArray(syncState.calendar))
+    ? (syncState.calendar as Record<string, unknown>)
+    : {};
+
+  let driveLastSyncedAt: string | null = typeof driveSync.last_synced_at === "string" ? driveSync.last_synced_at : null;
+  let calendarLastSyncedAt: string | null = typeof calendarSync.last_synced_at === "string" ? calendarSync.last_synced_at : null;
+
+  // Fallback to latest item timestamp if sync_state not yet populated
+  if (!driveLastSyncedAt && hasDriveScope) {
+    const { data: latestDrive } = await supabase
+      .from("items")
+      .select("created_at")
+      .eq("user_id", userId)
+      .eq("source", "drive")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestDrive?.created_at) driveLastSyncedAt = latestDrive.created_at;
+  }
+  if (!calendarLastSyncedAt && hasCalendarScope) {
+    const { data: latestCal } = await supabase
+      .from("items")
+      .select("created_at")
+      .eq("user_id", userId)
+      .eq("source", "calendar")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestCal?.created_at) calendarLastSyncedAt = latestCal.created_at;
+  }
+
+  const initialColl = gmailSync.initial_collection && typeof gmailSync.initial_collection === "object"
+    ? (gmailSync.initial_collection as Record<string, unknown>)
+    : null;
+  const gmailLastSyncedAt: string | null = typeof gmailSync.last_synced_at === "string"
+    ? gmailSync.last_synced_at
+    : (typeof initialColl?.completed_at === "string" ? initialColl.completed_at : connection.last_synced_at);
+
+  const getStatus = (hasScope: boolean, serviceSync: Record<string, unknown>): GoogleServiceSyncStatus => {
+    if (!hasScope) return "reconnect_required";
+    if (serviceSync.last_error === "reconnect_required") return "reconnect_required";
+    if (typeof serviceSync.last_error === "string" && serviceSync.last_error) return "error";
+    return "connected";
+  };
+
+  return {
+    googleAccount: {
+      email: connection.account_email,
+      connected: true,
+      status: "connected",
+      lastSyncedAt: connection.last_synced_at,
+    },
+    services: {
+      gmail: {
+        status: getStatus(hasGmailScope, gmailSync),
+        lastSyncedAt: gmailLastSyncedAt,
+        lastResult: (gmailSync.last_result && typeof gmailSync.last_result === "object") ? gmailSync.last_result as Record<string, unknown> : null,
+        error: typeof gmailSync.last_error === "string" ? gmailSync.last_error : null,
+      },
+      drive: {
+        status: getStatus(hasDriveScope, driveSync),
+        lastSyncedAt: driveLastSyncedAt,
+        lastResult: (driveSync.last_result && typeof driveSync.last_result === "object") ? driveSync.last_result as Record<string, unknown> : null,
+        error: typeof driveSync.last_error === "string" ? driveSync.last_error : null,
+      },
+      calendar: {
+        status: getStatus(hasCalendarScope, calendarSync),
+        lastSyncedAt: calendarLastSyncedAt,
+        lastResult: (calendarSync.last_result && typeof calendarSync.last_result === "object") ? calendarSync.last_result as Record<string, unknown> : null,
+        error: typeof calendarSync.last_error === "string" ? calendarSync.last_error : null,
+      },
+    },
+  };
 }
 
 function tokenContext(userId: string, providerAccountId: string, kind: "access" | "refresh") {

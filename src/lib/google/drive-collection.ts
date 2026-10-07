@@ -116,6 +116,9 @@ export async function collectDrive(input: DriveCollectionInput): Promise<DriveCo
     }
     for (const row of result.results) result[row.outcome]++;
     result.complete = !result.capped && !result.stopReason && result.failed === 0 && result.unprocessed === 0;
+    if (typeof admin.from === "function") {
+      await storeDriveSyncState(admin, user.id, connectionId, result).catch(() => {});
+    }
     let analysisItemIds: string[] = [], analysisDiscoveryFailed = false;
     try {
       const ids = result.results.flatMap(row => row.itemId ? [row.itemId] : []);
@@ -127,4 +130,37 @@ export async function collectDrive(input: DriveCollectionInput): Promise<DriveCo
     } catch { analysisDiscoveryFailed = true; }
     return { ...result, analysisItemIds, analysisDiscoveryFailed };
   } finally { clearTimeout(timer); active.delete(key); }
+}
+
+async function storeDriveSyncState(admin: ReturnType<typeof createAdminClient>, userId: string, connectionId: string, result: DriveCollectionResult) {
+  if (typeof admin.from !== "function") return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: current, error: readError } = await admin.from("connections").select("id,sync_state,updated_at")
+      .eq("id", connectionId).eq("user_id", userId).eq("provider", "google").eq("status", "connected").maybeSingle();
+    if (readError || !current) return;
+    const state = object(current.sync_state), drive = object(state.drive);
+    const isSuccess = result.complete && result.failed === 0;
+    const now = new Date().toISOString();
+    const driveState = {
+      ...drive,
+      last_synced_at: isSuccess ? now : (drive.last_synced_at ?? null),
+      last_result: {
+        created: result.created,
+        updated: result.updated,
+        reused: result.reused,
+        excluded: result.excluded,
+        failed: result.failed,
+        unprocessed: result.unprocessed,
+        complete: result.complete,
+      },
+      last_error: isSuccess ? null : (result.failed > 0 ? "PARTIAL_FAILURE" : null),
+    };
+    const updatePayload = {
+      sync_state: { ...state, drive: driveState } as Json,
+      ...(isSuccess ? { last_synced_at: now } : {}),
+    };
+    const { data, error: updateError } = await admin.from("connections").update(updatePayload)
+      .eq("id", connectionId).eq("user_id", userId).eq("updated_at", current.updated_at).select("id").maybeSingle();
+    if (!updateError && data) return;
+  }
 }

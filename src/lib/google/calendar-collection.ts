@@ -86,6 +86,42 @@ export async function collectCalendar(): Promise<CalendarCollectionResult> {
       if (pageToken && result.pagesRead >= CALENDAR_LIMITS.pages) { result.capped = true; result.stopReason = "PAGE_LIMIT"; break; }
     } while (pageToken);
     result.complete = !result.capped && !result.stopReason && result.failed === 0 && result.unprocessed === 0;
+    if (typeof admin.from === "function") {
+      await storeCalendarSyncState(admin, user.id, connectionId, result).catch(() => {});
+    }
     return result;
   } finally { clearTimeout(timer); active.delete(key); }
+}
+
+async function storeCalendarSyncState(admin: ReturnType<typeof createAdminClient>, userId: string, connectionId: string, result: CalendarCollectionResult) {
+  if (typeof admin.from !== "function") return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data: current, error: readError } = await admin.from("connections").select("id,sync_state,updated_at")
+      .eq("id", connectionId).eq("user_id", userId).eq("provider", "google").eq("status", "connected").maybeSingle();
+    if (readError || !current) return;
+    const state = record(current.sync_state), calendar = record(state.calendar);
+    const isSuccess = result.complete && result.failed === 0;
+    const now = new Date().toISOString();
+    const calendarState = {
+      ...calendar,
+      last_synced_at: isSuccess ? now : (calendar.last_synced_at ?? null),
+      last_result: {
+        created: result.created,
+        updated: result.updated,
+        reused: result.reused,
+        skipped: result.skipped,
+        failed: result.failed,
+        unprocessed: result.unprocessed,
+        complete: result.complete,
+      },
+      last_error: isSuccess ? null : (result.failed > 0 ? "PARTIAL_FAILURE" : null),
+    };
+    const updatePayload = {
+      sync_state: { ...state, calendar: calendarState } as Json,
+      ...(isSuccess ? { last_synced_at: now } : {}),
+    };
+    const { data, error: updateError } = await admin.from("connections").update(updatePayload)
+      .eq("id", connectionId).eq("user_id", userId).eq("updated_at", current.updated_at).select("id").maybeSingle();
+    if (!updateError && data) return;
+  }
 }

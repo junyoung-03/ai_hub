@@ -18,7 +18,7 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
   catch { return <AppShell title="자료 상세"><div role="alert" className="panel"><p>자료를 불러오지 못했습니다.</p><a href={`/items/${itemId}`} className="btn-secondary mt-3">다시 시도</a></div></AppShell>; }
   if (!data) notFound();
   const { item, classification, actions, evidence, original } = data;
-  const eligible = item.source === "gmail" || item.source === "drive" || item.source === "upload" && data.upload?.extractionStatus === "complete";
+  const eligible = item.source === "gmail" || item.source === "drive" || item.source === "manual" || (item.source === "upload" && data.upload?.extractionStatus === "complete");
 
   const originalPane = <section className="min-w-0 rounded-xl border border-line bg-surface px-5 py-6 sm:px-8 sm:py-8" aria-labelledby="original-title">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="original-title">원문</h2>{original.previewType === "google" && original.url && <a className="btn-secondary" href={original.url} target="_blank" rel="noopener noreferrer">Google 원본 ↗</a>}</div>

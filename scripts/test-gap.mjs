@@ -58,10 +58,11 @@ test('Action GET validates type/status/deadline/limit and refuses unknown owners
  assert.equal(a.parseActionQuery(new URLSearchParams('status=completed')).status,'completed');
 });
 const sourceItem=(source,format,metadata={})=>({source,format,content_text:content,metadata});
-test('AI source eligibility accepts Gmail/Drive/complete Upload, excludes Calendar/manual/incomplete',()=>{
+test('AI source eligibility accepts Gmail/Drive/manual/complete Upload, excludes Calendar/incomplete',()=>{
  assert.equal(policy.analysisEligible(sourceItem('gmail','email')),true);assert.equal(policy.analysisEligible(sourceItem('drive','document')),true);
+ assert.equal(policy.analysisEligible(sourceItem('manual','text')),true);
  assert.equal(policy.analysisEligible(sourceItem('upload','pdf',{upload:{extraction:{status:'complete',version:'upload-text-v1'}}})),true);
- for(const v of [sourceItem('calendar','calendar_event'),sourceItem('manual','text'),sourceItem('upload','image'),sourceItem('drive','pdf'),{...sourceItem('gmail','email'),content_text:''}])assert.equal(policy.analysisEligible(v),false);
+ for(const v of [sourceItem('calendar','calendar_event'),sourceItem('upload','image'),sourceItem('drive','pdf'),{...sourceItem('gmail','email'),content_text:''}])assert.equal(policy.analysisEligible(v),false);
 });
 test('AI unchanged analysed skips; changed canonical text/model reanalyses, override does not affect fingerprint',()=>{
  const model='gemini-fixture',item=sourceItem('drive','document',{aiAnalysis:{schemaVersion:'0.2',model,inputFingerprint:policy.analysisFingerprint(content,model)},user_primary_topic:'override'});
