@@ -5,7 +5,7 @@ import { load } from './calendar-loader.mjs';
 const {PGlite}=await import('../supabase/.temp/calendar2-db/node_modules/@electric-sql/pglite/dist/index.js');
 const db=new PGlite(),c=load('src/lib/uploads/contract.ts');
 const owner='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222';
-const base=readFileSync(new URL('../0001_initial_schema (4).sql',import.meta.url),'utf8');
+const base=readFileSync(new URL('../supabase/baseline/0001_initial_schema.sql',import.meta.url),'utf8');
 const sql=readFileSync(new URL('../supabase/migrations/20261005070410_upload_storage_session_boundary.sql',import.meta.url),'utf8');
 const followup=readFileSync(new URL('../supabase/migrations/20261005093526_upload_provider_neutral_rpc.sql',import.meta.url),'utf8');
 const scalar=async(q,args=[])=>Object.values((await db.query(q,args)).rows[0])[0];

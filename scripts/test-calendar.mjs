@@ -200,7 +200,7 @@ test("Calendar collect HTTP rejects arbitrary body and origin and sanitizes erro
   assert.equal((await route.POST(new Request("https://app.invalid/api",{method:"POST",headers:{origin:"https://evil.invalid"}}))).status,403);
 });
 test("SQL draft statically enforces Calendar identity, ownership, CAS, version ordering, cancellation and service-only rights", () => {
-  const sql = readFileSync(new URL('../docs/drafts/calendar/persist_calendar_item.sql',import.meta.url),'utf8');
+  const sql = readFileSync(new URL('../tests/fixtures/sql/calendar/persist_calendar_item.sql',import.meta.url),'utf8');
   for (const snippet of ["user_id=p_user_id", "provider='google' and status='connected' for update", scope,
     "private.google_connection_tokens", "source='calendar' and external_container_id='primary'", "p_expected_item_updated_at",
     "p_source_updated_at<=v_item.source_updated_at", "Stale or unordered source snapshot", "'outcome','reused'",
@@ -209,6 +209,6 @@ test("SQL draft statically enforces Calendar identity, ownership, CAS, version o
   assert.ok(!/\b(?:alter|drop)\s+(?:table|policy|index)|(?:insert into|update|delete from)\s+public\.(?:classifications|actions|action_sources)/i.test(sql));
   assert.ok(!sql.includes("now()"));
   assert.equal(sql,readFileSync(new URL('../supabase/migrations/20261005055754_persist_calendar_item.sql',import.meta.url),'utf8'));
-  assert.equal(readFileSync(new URL('../docs/drafts/calendar/google_calendar_scope_boundary.sql',import.meta.url),'utf8'),
+  assert.equal(readFileSync(new URL('../tests/fixtures/sql/calendar/google_calendar_scope_boundary.sql',import.meta.url),'utf8'),
     readFileSync(new URL('../supabase/migrations/20261005055748_google_calendar_scope_boundary.sql',import.meta.url),'utf8'));
 });

@@ -12,7 +12,7 @@ try {
   assert.ok(versions.every(v=>!history.some(h=>h.version===v)),"Migration already present; inspect rather than reapply");
   const migrations=versions.map(v=>{
     const name=local.find(n=>n.startsWith(v)); const sql=readFileSync(`supabase/migrations/${name}`,"utf8");
-    assert.equal(sql,readFileSync(`docs/drafts/calendar/${name.slice(15)}`,"utf8"));
+    assert.equal(sql,readFileSync(`tests/fixtures/sql/calendar/${name.slice(15)}`,"utf8"));
     assert.ok(!/\b(?:create|alter|drop)\s+(?:table|index|policy)\b/i.test(sql));
     return {v,name:name.slice(15,-4),sql,body:sql.replace(/^begin;\s*$/m,"").replace(/^commit;\s*$/m,"")};
   });

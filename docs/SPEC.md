@@ -1,6 +1,6 @@
 # AI 통합 정보 허브 — 개발 명세서
 
-> 문서명: `SPEC.md`  
+> 문서명: `docs/SPEC.md`
 > 기준본: Notion 「AI 통합 정보 허브 — 서비스 기획 및 개발 기준서 v0.5」  
 > 문서 목적: Codex 및 개발자가 실제 구현 시 참고하는 저장소 내 상세 명세  
 > 상태: v0.1
@@ -16,7 +16,7 @@
 ### 우선순위
 
 1. Notion 「AI 통합 정보 허브 — 서비스 기획 및 개발 기준서 v0.5」
-2. `SPEC.md`
+2. `docs/SPEC.md`
 3. `README.md`
 4. 실제 구현 코드
 
@@ -1091,7 +1091,7 @@ Codex는 위 항목을 임의로 확정된 요구사항처럼 처리하지 않�
 ## 33. 승인된 Implementation Phase 6A 범위 (2026-10-04)
 
 위 32절은 초기 기획 당시의 단계 기록이다. Phase 1–5 완료 후 저장된 Gmail ITEM만 Gemini로 분석하는
-Phase 6A를 구현한다. 출력 기준은 루트 AI_OUTPUT_SPEC.md / AI_OUTPUT_SCHEMA.json v0.2이며,
+Phase 6A를 구현한다. 출력 기준은 docs/ai/AI_OUTPUT_SPEC.md / AI_OUTPUT_SCHEMA.json v0.2이며,
 eventObservations를 Action과 독립적으로 items.metadata.aiAnalysis에 저장하고 schemaVersion="0.2"를 보존한다.
 description은 추가하지 않는다. 기존 테이블 구조·Gmail 수집·Notion 원본은 변경하지 않는다.
 승인된 persist_gmail_item_analysis 서버 전용 RPC로 Classification + Action + Evidence를 단일 transaction에
@@ -1108,7 +1108,7 @@ AI 생성에 전달하는 구조 스키마는 provider 지원 subset이며, 저�
 기존 응답을 유지하며 AI/User/Effective 분류, DB Action의 requirements/conditions/시작일/마감일/
 완료 상태, Source Evidence 및 독립된 eventObservations, 안전한 AIAnalysis 요약을 조회한다.
 사용자 override 우선과 명시적 빈 tags를 보존한다. indexing은 검색/Embedding 대기 상태다.
-상세 필드 의미와 검증 범위는 API_SPEC.md 23절, 현재 인계 상태는 docs/PROJECT_STATE.md를 따른다.
+상세 필드 의미와 검증 범위는 docs/api/API_SPEC.md 23절을 따른다.
 
 실제 개발 DB RLS principal의 읽기 전용 조회와 production 조회/GET handler adapter 검증 PASS.
 미인증 production HTTP 차단 PASS. 실제 Browser OAuth/인증 cookie E2E는 재실행하지 않았고,
@@ -1146,7 +1146,7 @@ Google 삭제/접근 상실은 ITEM·본문 보존하며 목록 부재만으로 
 사용자 직접 삭제/보존기간/Drive 분석/재분석/Search/Embedding은 후속 범위.
 Cross-ITEM Action 병합은 Drive AI 분석 전에 별도 결정한다.
 
-Drive 단계 체계는 Drive-1/Drive-2/Drive-3 총 3단계다. Drive-1/2/3 및 전체 Drive COMPLETE. 실제 검증 범위와 한계는 docs/PROJECT_STATE.md를 따른다.
+Drive 단계 체계는 Drive-1/Drive-2/Drive-3 총 3단계다. Drive-1/2/3 및 전체 Drive COMPLETE.
 Drive-3 승인 범위는 OAuth/Token 경계, Drive client, Docs 추출, ITEM 저장·재수집, collect API와 실제 E2E/회귀 검증 전체다.
 서비스 로그인 OAuth는 변경하지 않는다. persist_drive_item은 정적 검증용 SQL 초안만 작성하고 별도 승인 전 적용하지 않는다.
 ITEM table/column/index/RLS 변경 금지. persist_drive_item 함수 적용은 별도 승인 후 개발 DB에서만 진행한다.
@@ -1205,7 +1205,7 @@ Classification/user override/Action/Evidence/metadata.aiAnalysis 및 기존 proc
 
 현재 table/column/index/RLS는 변경하지 않는다. 새 함수 Migration 두 개는 Calendar-3 사용자 승인으로 ai-hub-dev에만 적용했다.
 Production 미적용이며 다른 환경 적용은 별도 승인 범위다. 기존 Migration 이력 repair/reset은 하지 않았다.
-API/Detail 계약은 API_SPEC.md 25절, 완료 검증 범위·실행 한계는 docs/PROJECT_STATE.md를 따른다.
+API/Detail 계약은 docs/api/API_SPEC.md 25절을 따른다.
 
 
 # 28. 승인된 PDF/이미지 직접 업로드 MVP (Upload-1/2/3, 2026-10-05)
@@ -1227,7 +1227,7 @@ prepare 후 lease를 해제하고 complete에 새 attempt/CAS를 사용한다. �
 기존 enum uploaded→queued→extracting→queued로 충분하며 마지막 queued는 후속 AI 대기다.
 metadata.upload.extraction.status 및 safe Detail page map으로 추출 완료와 AI 완료를 구분한다.
 
-상한·HTTP·상태·Evidence 세부 계약은 API_SPEC.md 24절, parser 격리/보수적 PDF 제한 및
+상한·HTTP·상태·Evidence 세부 계약은 docs/api/API_SPEC.md 24절, parser 격리/보수적 PDF 제한 및
 배포 조건은 workers/upload/README.md에서 관리한다. OCR confidence는 참고값이며 문자 삭제에 쓰지 않는다.
 Library에 기능용 upload/progress/cancel/retry 제어만 연결하며 화면 스타일/배치 디자인과 provider별 화면은 만들지 않는다.
 Classification/Action/Deadline/Embedding 및 Gemini 분석은 이 단계에 포함하지 않는다.
@@ -1290,7 +1290,7 @@ Upload-3 및 전체 Upload COMPLETE. 실제 Vercel/Linux 배포와 모바일 성
 
 Search-2는 provider/chunker/저장/SQL·pgvector/hybrid/Action/search/Similar/backfill/idempotency/RLS/격리 검증이다.
 Search-3는 실제 합성 source 색인·자연어·근거 E2E/보안/회귀/최종 문서화다. Search-4 이상은 없다.
-API 상세는 API_SPEC.md 25절, 실제 품질 gate는 docs/SEARCH_GOLDEN.md를 따른다.
+API 상세는 docs/api/API_SPEC.md 25절, 실제 품질 gate는 docs/setup/SEARCH_VALIDATION.md를 따른다.
 Search Migration 3건(Search-2 기본 계약, Search-3 coverage/ranking 보완)을 ai-hub-dev에 적용했다. Production 적용과 실제 개인자료 semantic 전체 backfill은 하지 않는다.
 
 ### Search-3 완료 및 마감 검증
@@ -1303,7 +1303,7 @@ Query cache key는 owner + query + effective filters + Asia/Seoul + active embed
 Keyword 후보는 exact title → title phrase → body phrase/FTS/literal 우선순위와 source date/ID로 결정한다.
 기존 자료 보존은 row count/비민감 identity·checkpoint·metadata·소유권 및 기존 기능 회귀로 검증한다.
 Access/Refresh Token과 그 파생값을 직접 비교하지 않는다. 개인자료 semantic backfill은 미실행이다.
-실행 범위와 fixture 경로의 한계는 docs/PROJECT_STATE.md 17절 및 docs/SEARCH_GOLDEN.md에 기록한다.
+검색 검증 절차와 합성 fixture의 기대 결과는 docs/setup/SEARCH_VALIDATION.md를 따른다.
 다음 단계는 Final Integration / MVP Final Verification이며 별도 지시 전 시작하지 않는다.
 
 ## 38. Polished UI 2.0 — 승인된 통합 화면 (2026-10-05)
@@ -1325,7 +1325,6 @@ Today / Library / Search / Actions / Detail / Settings에 적용한다. 기존 A
 - 분류 수정 PATCH, Action 완료/복원 PATCH, 완료 Action 목록, 데이터 삭제 route는 현재 미구현이다.
   해당 기능을 로컬 임시 상태로 대체하지 않는다. importance 계약은 기존 후속 TODO를 유지한다.
 
-실제 검증과 Backend GAP은 `docs/POLISHED_UI_2_REPORT.md`에서 관리한다.
 
 ## 39. FINAL BACKEND GAP FIX (2026-10-06)
 
@@ -1355,7 +1354,6 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 실제 모델 생성 503과 fixture 기반 검증을 구분한다. 구현/품질 검사 통과만으로 실제 AI 성공 E2E 또는 전체 MVP 완료를 주장하지 않는다.
 후속 검증에서 합성 PDF의 실제 모델 생성·검증·atomic 저장 및 사용자 override 보호를 확인했다.
 실제 결과의 최종 브라우저 Detail 확인은 로컬 연결 거부로 미완료다.
-상세 결과는 `docs/FINAL_BACKEND_GAP_REPORT.md`를 따른다.
 
 ## 40. POLISHED VISUAL TRANSPLANT (2026-10-06)
 
@@ -1375,7 +1373,6 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 
 현재 브라우저에서 실제 저장된 Gemini 합성 PDF 결과 및 Classification/Action writes를 재검증했다.
 추가 합성 OCR 이미지의 분석503과 미실행 외부 Google 재수집을 성공으로 판정하지 않는다.
-검증 결과/차이/남은 GAP은 `docs/POLISHED_VISUAL_TRANSPLANT_REPORT.md`를 따른다.
 
 ## 41. 승인된 검색 중심 UI (2026-10-08 설계 / 2026-10-09 Production 승인)
 
@@ -1395,4 +1392,4 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
   AI 답변/이벤트를 추측하거나 Search 계약·ranking·backend를 변경하지 않는다.
 - 기존 Auth/RLS/Google OAuth/Sync/API/DB/migration을 보존한다. 승인된 Landing을 공개 루트와 /landing에 연결하고, 보호된 페이지는 기존 인증 경계를 유지한다.
   Shell·본문 skeleton을 유지하고 전체 화면 로딩은 추가하지 않는다.
-- 로컬 포트는 사용자 지정 3001이다. 검증 및 한계는 docs/LOCAL_UI_PREVIEW.md에 기록한다.
+- 로컬 포트는 사용자 지정 3001이다.

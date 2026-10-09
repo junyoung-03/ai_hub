@@ -23,7 +23,7 @@ const snapshot=`select 'data.'||name k,hash v from (
  union all select 'bucket.'||id,md5(to_jsonb(t)::text)from storage.buckets t where id<>'upload-originals';`;
 try{
  requireDev();assert.equal(process.env.UPLOAD_DB_TEST_PROJECT,'oclzdppdiljbojvqtkeu');
- const sql=readFileSync(`docs/drafts/upload/${filename}`,'utf8');assert.equal(sql,readFileSync(`supabase/migrations/${filename}`,'utf8'));
+ const sql=readFileSync(`tests/fixtures/sql/upload/${filename}`,'utf8');assert.equal(sql,readFileSync(`supabase/migrations/${filename}`,'utf8'));
  assert.ok(!/\b(drop|truncate)\b/i.test(sql));assert.equal((sql.match(/alter table /g)||[]).length,1);assert.ok(sql.includes('alter table private.upload_sessions enable row level security;'));
  assert.ok(sql.includes("('upload-originals','upload-originals',false,5000000"));assert.ok(!/create policy .*for (update|delete)/i.test(sql));
  const history=query('select version from supabase_migrations.schema_migrations order by version');

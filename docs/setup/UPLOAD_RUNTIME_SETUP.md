@@ -1,8 +1,7 @@
-# Upload-3 브라우저 OCR 실행 안내 (2026-10-05)
+# Upload 및 브라우저 OCR 실행 안내
 
 `20261005093526_upload_provider_neutral_rpc.sql`은 사용자 승인 후 **ai-hub-dev 적용 완료**다.
 기존 private upload-originals/session/RLS/Migration을 유지하고 provider-neutral RPC만 교체했다.
-최소 실제 브라우저 E2E 및 데이터 보존 검증 PASS, 전체 Upload COMPLETE. 검증 근거는 PROJECT_STATE.md 15절.
 다른 환경에 이 코드를 배포하려면 해당 환경에도 승인된 RPC Migration을 먼저 적용해야 한다.
 
 MVP: text PDF=server PDF.js; image=browser Tesseract.js; scanned PDF=browser PDF.js render + Tesseract.js.

@@ -1,6 +1,7 @@
 param(
   [switch]$Apply,
   [string]$Source = 'supabase/.temp/upload-worker-source',
+  [string]$IamMemberEmail = $env:UPLOAD_WORKER_IAM_MEMBER_EMAIL,
   [string]$Gcloud = 'C:/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd'
 )
 $ErrorActionPreference = 'Stop'
@@ -32,6 +33,7 @@ if (-not $Apply) {
   Write-Output 'READY: deployment plan only; use -Apply after the already-authorized project billing setup is complete.'
   exit 0
 }
+if ([string]::IsNullOrWhiteSpace($IamMemberEmail)) { throw 'IAM member email is required. Pass -IamMemberEmail or set UPLOAD_WORKER_IAM_MEMBER_EMAIL.' }
 $taskExpected = @('Dockerfile','package.json','package-lock.json','.gcloudignore','workers/upload/server.mjs','workers/upload/isolate.mjs','workers/upload/child.mjs','workers/upload/parser.mjs')
 $taskActual = @(Get-ChildItem -LiteralPath $taskSource -File -Recurse | ForEach-Object { $_.FullName.Substring($taskSource.Length + 1).Replace('\','/') })
 if (@(Compare-Object ($taskExpected | Sort-Object) ($taskActual | Sort-Object)).Count -gt 0) { throw 'Unexpected build context files.' }
@@ -65,7 +67,7 @@ foreach ($taskRule in @(@{Name='ai-hub-upload-deny-egress-v4';Range='0.0.0.0/0'}
 }
 Write-Output 'Deploying the private parser; Cloud Build may take several minutes. Raw logs are suppressed.'
 Invoke-UploadCloud @('run','deploy',$taskService,"--source=$taskSource","--region=$taskRegion",'--no-allow-unauthenticated',"--service-account=$taskRuntime","--build-service-account=projects/$taskProject/serviceAccounts/$taskBuilder",'--concurrency=1','--max-instances=1','--min-instances=0','--cpu=1','--memory=512Mi','--timeout=120s','--execution-environment=gen2',"--network=$taskNetwork","--subnet=$taskSubnet","--network-tags=$taskTag",'--vpc-egress=all-traffic','--ingress=all') 'private-deploy' | Out-Null
-Invoke-UploadCloud @('run','services','add-iam-policy-binding',$taskService,"--region=$taskRegion",'--member=user:an5194jung@gmail.com','--role=roles/run.invoker') 'developer-invoker' | Out-Null
+Invoke-UploadCloud @('run','services','add-iam-policy-binding',$taskService,"--region=$taskRegion","--member=user:$IamMemberEmail",'--role=roles/run.invoker') 'developer-invoker' | Out-Null
 $taskPolicy = Invoke-UploadCloud @('run','services','get-iam-policy',$taskService,"--region=$taskRegion",'--format=json') 'verify-private-policy' | ConvertFrom-Json
 if ($taskPolicy.bindings.members -contains 'allUsers' -or $taskPolicy.bindings.members -contains 'allAuthenticatedUsers') { throw 'Public invocation detected; do not use worker.' }
 $taskDescription = Invoke-UploadCloud @('run','services','describe',$taskService,"--region=$taskRegion",'--format=json') 'verify-service' | ConvertFrom-Json

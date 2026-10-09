@@ -26,7 +26,7 @@ its handle. Upgrades must test that protocol. kor+eng cached best_int data, sequ
 Only text + scalar confidence/origin fields leave the adapter; raw blocks/bboxes/engine payload are never persisted.
 PDF.js has its own render Worker (not a second OCR engine). Canvas/bitmap are released per page.
 
-Asset/build/install, lease/reconnect, limitations and E2E instructions: ../../docs/UPLOAD_RUNTIME_SETUP.md.
+Asset/build/install, lease/reconnect, limitations and E2E instructions: ../../docs/setup/UPLOAD_RUNTIME_SETUP.md.
 `next.config.ts` traces child/parser/native packages for prepare/complete and emits same-origin asset CSP.
 Static /ocr paths bypass Supabase session refresh so immutable asset caching does not carry auth cookies.
 No binary/language data in Git. `prepare:upload-assets` builds ignored public assets and verifies fixed language hashes.

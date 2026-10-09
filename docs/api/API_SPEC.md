@@ -1,4 +1,4 @@
-# API_SPEC.md
+# docs/api/API_SPEC.md
 
 # AI 통합 정보 허브 API 명세 v0.1
 
@@ -1066,7 +1066,7 @@ Drive-3 endpoint POST /api/v1/connections/google/drive/collect: 구현·격리 �
 입력은 folder mode 또는 files mode 중 하나, 응답은 파일별 결과 및 created/updated/reused/excluded/failed/unprocessed,
 complete/capped/stopReason/pagesRead/downloadedTextBytes/requestId. 본문/Token/raw error는 응답 금지.
 persist_drive_item canonical Migration은 supabase/migrations/20261005013202_persist_drive_item.sql이다. 별도 승인 후 dev 적용/history 등록 및 소유권/권한/identity/CAS/분석 보존/RLS/disconnect Runtime PASS.
-docs/drafts/drive/persist_drive_item.sql은 승인 초안 보관본이다. 지정 Docs 1건의 실제 저장/동일 버전 reuse/조회/원본 URL/사용자 RLS/Gmail 데이터 보존 PASS. 추가 수집 없이 정지한다.
+tests/fixtures/sql/drive/persist_drive_item.sql은 승인 초안 보관본이다. 지정 Docs 1건의 실제 저장/동일 버전 reuse/조회/원본 URL/사용자 RLS/Gmail 데이터 보존 PASS. 추가 수집 없이 정지한다.
 
 입력: {"mode":"folder","folderId":"Google fileId"} 또는 {"mode":"files","fileIds":["Google fileId"]}.
 추가 필드/임의 q/recursive/user_id/connection_id 금지. files는 1~20개 중복 없는 ID만 허용.
@@ -1081,7 +1081,7 @@ JSON 응답은 8 MB transport guard를 적용하고 넘으면 DOCUMENT_LIMIT로 
 ## 25. Calendar-2 — 승인된 수집 / Detail 계약 (2026-10-05)
 
 Calendar-1 승인에 따라 구현한 계약이다. Calendar-2는 실제 Google 동의·Event 수집·개발 DB Migration 적용을 수행하지 않는다.
-제품 범위/수집 제한/날짜 의미는 SPEC.md 36절을 따른다. Calendar-3는 별도 승인 후 실제 검증한다.
+제품 범위/수집 제한/날짜 의미는 docs/SPEC.md 36절을 따른다. Calendar-3는 별도 승인 후 실제 검증한다.
 
 ### Data OAuth
 
@@ -1135,7 +1135,7 @@ Scope Migration은 기존 upsert allowlist/축소 방지/상한만 확장하며 
 함수 입력·owner/연결/Scope/Token·Calendar identity·hash/날짜/허용 metadata·CAS/버전 순서를 서버와 DB에서 검증한다.
 권한 및 SQL 구문/격리 검증 결과는 PROJECT_STATE에 기록한다. 실제 개발 DB 실행/RLS/동시성 검증을 대체하지 않는다.
 Calendar-3 승인 후 두 함수 Migration은 ai-hub-dev에 적용했다. 실제 RPC/RLS 및 OAuth/Event 1건/조회/회귀 결과와
-CLI adapter·Browser collect HTTP 미검증 경계는 docs/PROJECT_STATE.md 10절을 따른다. API 계약 변경은 없다.
+CLI adapter·Browser collect HTTP의 실제 검증은 격리 테스트와 구분한다. API 계약 변경은 없다.
 
 
 # 24. 승인된 Upload-1/2/3 서버 계약 (2026-10-05)
@@ -1204,7 +1204,7 @@ Cloud Vision/Cloud Run/Billing/OCR ADC는 MVP 제외, 기존 ADC 보존. Gemini/
 
 ## 25. 승인된 Search MVP API (Search-1 보완 / Search-2)
 
-이 절은 초기 10절의 answered/insufficient_evidence/Gemini Answer를 대체한다. 제품 기준은 SPEC.md 37절이다.
+이 절은 초기 10절의 answered/insufficient_evidence/Gemini Answer를 대체한다. 제품 기준은 docs/SPEC.md 37절이다.
 
 ### POST /api/v1/search
 
@@ -1260,7 +1260,7 @@ config/provider/storage 503, invalid vector 502다. Provider raw body/Secret/개
 Search-3 실제 dev E2E 및 비민감 기존 자료 회귀 PASS. 응답 coverage는 필터 결과 개수가 아닌 본인 전체 corpus다.
 semanticIndexedItems는 active version/current revision/완료 generation의 유효 vector가 있는 ITEM 수다.
 Coverage도 최초 결과 snapshot에 고정한다. 개인정보·자격증명 파생값은 API 응답/검증 비교에 포함하지 않는다.
-실제 검증 범위·Golden 결과는 docs/PROJECT_STATE.md 17절 및 docs/SEARCH_GOLDEN.md를 따른다.
+검색 검증 절차는 docs/setup/SEARCH_VALIDATION.md를 따른다.
 
 ## 26. Polished UI 2.0 통합 범위 (2026-10-05)
 
@@ -1342,4 +1342,4 @@ Upload의 기존 저장 결과 itemId를 동일 흐름에 연결한다. Calendar
 후속 명시 승인으로 20261006000216_restrict_eligible_analysis_to_drive_upload.sql을 적용해 같은 신규 RPC에서
 Gmail 허용 조건을 제거했다. 신규 RPC는 Drive/document 및 extraction 완료 Upload/pdf,image만 허용한다.
 anon/authenticated EXECUTE 불가, service_role 전용이며 owner+ITEM 조건을 유지한다. 추가 RPC는 총 1개다.
-Gmail 원본 RPC/table/column/enum/RLS/Storage policy 변경은 없다. 실제 생성 장애와 검증 범위는 docs/FINAL_BACKEND_GAP_REPORT.md를 따른다.
+Gmail 원본 RPC/table/column/enum/RLS/Storage policy 변경은 없다.

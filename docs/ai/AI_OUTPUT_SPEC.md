@@ -1,4 +1,4 @@
-# AI_OUTPUT_SPEC.md
+# docs/ai/AI_OUTPUT_SPEC.md
 
 # AI 통합 정보 허브 — AI Structured Output 명세 v0.2
 

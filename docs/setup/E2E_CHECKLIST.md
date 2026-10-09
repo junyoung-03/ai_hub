@@ -1,18 +1,18 @@
-# PREVIEW FINAL E2E 체크리스트
+# Preview E2E 검증 체크리스트
 
-2026-10-06. 현재 상태: 로컬 검사 PASS / Preview URL 없음 / 원격 E2E NOT_RUN. Production 배포 금지. 개인자료 전체 AI 분석/embedding backfill 금지. 전 항목의 실제 Preview PASS 및 미해결 P0=0일 때만 `MVP_READY_FOR_PRODUCTION`으로 판정하고 Production 승인을 기다린다.
+승인된 Preview 환경에서 합성 자료로 재사용하는 검증 절차다. 이 문서는 특정 배포의 PASS 기록이 아니다. Production 배포 및 개인자료 전체 AI 분석·embedding backfill은 별도 승인 없이 수행하지 않는다.
 
 ## 1. 배포 전 게이트
 
-- [ ] 기존 Vercel 프로젝트, 연결된 Git 저장소, Production Branch를 확인한다. 로컬 `.vercel`/CLI/프로젝트 연결 정보는 없으며 프로젝트 존재 여부는 아직 확인되지 않았다.
+- [ ] 기존 Vercel 프로젝트, 연결된 Git 저장소, Production Branch를 확인한다. 환경별 연결 정보를 확인하고 기존 설정을 임의 변경하지 않는다.
 - [ ] **신규 프로젝트의 첫 배포는 Production으로 분류되므로 실행하지 않는다.** 기존 프로젝트의 Preview 경로가 확인되어야 한다. [Vercel 환경 문서](https://vercel.com/docs/deployments/environments)
-- [ ] 변경 파일과 secret 제외를 확인한 뒤 Preview용 `codex/preview-final-e2e` 같은 브랜치를 사용한다. 현재 `main`에는 push하지 않는다. 해당 브랜치가 프로젝트의 Production Branch가 아님을 확인한다.
-- [ ] 이번 작업의 UI/문서/폰트/합성 fixture만 commit 대상으로 검토한다. `.env.local`, `.next`, `.temp`, `public/ocr` 생성물, ZIP, credential, raw HAR는 제외한다. Backend/API/lib/types/proxy/workers/migrations/package/lockfile에는 이번 visual 작업 diff가 없다.
+- [ ] 변경 파일과 secret 제외를 확인한 뒤 Preview용 `codex/preview-final-e2e` 같은 브랜치를 사용한다. 실행 전 해당 환경의 변경 승인을 확인한다. 해당 브랜치가 프로젝트의 Production Branch가 아님을 확인한다.
+- [ ] 이번 작업의 UI/문서/폰트/합성 fixture만 commit 대상으로 검토한다. `.env.local`, `.next`, `.temp`, `public/ocr` 생성물, ZIP, credential, raw HAR는 제외한다. 검증 대상 commit의 실제 diff를 확인한다.
 - [ ] Git 연동 또는 기존 프로젝트의 Preview 배포 기능으로 배포하고 Dashboard의 Environment가 **Preview**인지 확인한다. Production 승격/`--prod`/Production Branch push를 실행하지 않는다.
 - [ ] 검증 배포의 commit SHA, deployment ID, 고정 deployment URL과 사용한 branch alias를 기록한다. alias가 다음 commit으로 이동하면 검증을 무효화하거나 해당 SHA를 다시 확인한다.
 - [ ] Preview 런타임에서 현재 Node/Next 요구사항, Linux native dependencies, 함수 duration을 확인한다. analyze 180s, Google sync 300s, Drive/Calendar/Upload 150s 등 기존 route 설정이 적용되어야 한다. 설정을 임의 단축하지 않는다. [Vercel duration 문서](https://vercel.com/docs/functions/configuring-functions/duration)
 
-실제 commit/push는 이번 준비 단계에서 수행하지 않았다. 로컬 tracking ref 일치는 원격 최신 상태를 보장하지 않으므로 실제 push 전 fetch 및 diff 검토가 필요하다.
+실행 전 원격 상태와 검증 대상 diff를 확인한다.
 
 ## 2. Preview 환경 및 인증
 
@@ -76,6 +76,6 @@ Gmail/Drive 수집 UI는 수집된 ITEM 중 일부에 자동 AI 분석을 호출
 - [ ] 아래 여섯 검사를 검증 commit에서 통과: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run check:supabase`, `git diff --check`.
 - [ ] `check:supabase`는 공개 Auth 연결 검사이며 실제 DB/RLS/로그인 E2E의 대체가 아니다.
 - [ ] 모든 필수 Preview 시나리오 PASS, 미해결 P0=0, secret 출력/Production 배포/개인자료 backfill 없음.
-- [ ] `docs/PREVIEW_FINAL_E2E_REPORT.md`의 12개 항목을 실제 증거로 갱신한다.
+- [ ] 각 시나리오의 실행 환경·결과·근거·미검증 항목을 별도 검증 기록에 남긴다.
 
 판정: 전체 PASS이면 `MVP_READY_FOR_PRODUCTION` 및 Production 승인 대기. 일부 미검증이면 `PARTIAL`; 재현된 결함이면 `NEEDS_FIX`; Preview 접근/설정 등 외부 선행조건 때문에 실행 자체가 불가능하면 해당 단계 `BLOCKED`. NOT_RUN을 PASS로 바꾸지 않는다. 준비 결과와 전체 제품 준비 판정은 구분한다.

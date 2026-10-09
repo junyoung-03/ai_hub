@@ -27,7 +27,7 @@ try {
  grant usage on schema private,public,extensions,auth to service_role;grant usage on schema public,auth to authenticated,anon;
  grant select,insert,update,delete on public.items,public.actions,public.action_sources to service_role;grant select on public.items,public.actions,public.action_sources to authenticated;
  alter table public.items enable row level security;create policy items_own on public.items to authenticated using(user_id=auth.uid());`);
- const base=readFileSync('0001_initial_schema (4).sql','utf8');
+ const base=readFileSync('supabase/baseline/0001_initial_schema.sql','utf8');
  await db.exec('set search_path=public,extensions');await db.exec(base.match(/create table public\.search_chunks \([\s\S]*?\n\);/)[0]);
  await db.exec(`create unique index search_chunks_item_chunk_uidx on public.search_chunks(item_id,chunk_index) where item_id is not null;
  alter table public.search_chunks enable row level security;create policy chunks_own on public.search_chunks to authenticated using(user_id=auth.uid());

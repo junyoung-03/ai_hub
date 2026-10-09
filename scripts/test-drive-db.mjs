@@ -117,7 +117,7 @@ end;
 $test$;
 select true as drive_item_assertions_pass;
 `;
-const draft = process.argv.includes("--with-draft") ? readFileSync("docs/drafts/drive/persist_drive_item.sql", "utf8")
+const draft = process.argv.includes("--with-draft") ? readFileSync("tests/fixtures/sql/drive/persist_drive_item.sql", "utf8")
   .replace(/^begin;\s*$/m, "").replace(/^commit;\s*$/m, "") : "";
 mkdirSync("supabase/.temp", { recursive: true });
 const file = "supabase/.temp/drive-item-runtime.sql";

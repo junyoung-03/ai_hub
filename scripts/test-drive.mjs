@@ -202,7 +202,7 @@ test("collect API rejects ambiguous/unbounded bodies and cross-origin writes, an
   assert.doesNotMatch(await response.text(), /synthetic|token|raw|body/i);
 });
 test("persist RPC draft forces source, locks connection before ITEM, validates hash and protects analysis tables", () => {
-  const sql = readFileSync("docs/drafts/drive/persist_drive_item.sql", "utf8");
+  const sql = readFileSync("tests/fixtures/sql/drive/persist_drive_item.sql", "utf8");
   assert.match(sql, /security definer set search_path=''/);
   assert.match(sql, /from public,anon,authenticated,service_role/);
   assert.match(sql, /to service_role/);

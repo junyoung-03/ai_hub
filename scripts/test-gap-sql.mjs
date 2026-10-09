@@ -6,7 +6,7 @@ import {vector} from '../supabase/.temp/calendar2-db/node_modules/@electric-sql/
 import {fixture,content} from './analysis-fixtures.mjs';
 import {loadAnalysisModule} from './analysis-loader.mjs';
 const db=new PGlite({extensions:{vector}});
-const base=readFileSync('0001_initial_schema (4).sql','utf8');
+const base=readFileSync('supabase/baseline/0001_initial_schema.sql','utf8');
 const result=loadAnalysisModule('src/lib/gemini/validation.ts').validateAnalysis(fixture(),content);
 const user='11111111-1111-4111-8111-111111111111',foreign='22222222-2222-4222-8222-222222222222';
 const scalar=async(sql,args=[])=>Object.values((await db.query(sql,args)).rows[0])[0];

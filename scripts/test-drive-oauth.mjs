@@ -194,7 +194,7 @@ test("authorize rejects cross-origin/ambiguous bodies; upgrade requires an exist
 
 test("scope SQL and unapplied ITEM draft preserve schema, privileges, checkpoints and concurrency guards", () => {
   const sql = readFileSync(new URL("../supabase/migrations/20261004145244_google_drive_oauth_scope_boundary.sql", import.meta.url), "utf8");
-  const draft = readFileSync(new URL("../docs/drafts/drive/persist_drive_item.sql", import.meta.url), "utf8");
+  const draft = readFileSync(new URL("../tests/fixtures/sql/drive/persist_drive_item.sql", import.meta.url), "utf8");
   for (const source of [sql, draft]) {
     assert.doesNotMatch(source, /(?:create|alter|drop)\s+(?:table|index|policy|type)\b/i);
     assert.equal((source.match(/\$\$/g) ?? []).length % 2, 0);

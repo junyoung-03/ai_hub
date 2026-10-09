@@ -6,7 +6,7 @@ import { load } from "./calendar-loader.mjs";
 const { PGlite } = await import("../supabase/.temp/calendar2-db/node_modules/@electric-sql/pglite/dist/index.js");
 const db = new PGlite();
 const contract = load("src/lib/google/calendar-contract.ts");
-const base = readFileSync(new URL("../0001_initial_schema (4).sql", import.meta.url), "utf8");
+const base = readFileSync(new URL("../supabase/baseline/0001_initial_schema.sql", import.meta.url), "utf8");
 const tokens = readFileSync(new URL("../supabase/migrations/20261004045936_google_data_oauth_token_storage.sql", import.meta.url), "utf8");
 const scopeSql = readFileSync(new URL("../supabase/migrations/20261005055748_google_calendar_scope_boundary.sql", import.meta.url), "utf8");
 const itemSql = readFileSync(new URL("../supabase/migrations/20261005055754_persist_calendar_item.sql", import.meta.url), "utf8");

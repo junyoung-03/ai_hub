@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import {query,quote} from './calendar-dev-db.mjs';
 try{
- const filename='20261005070410_upload_storage_session_boundary.sql';const sql=readFileSync(`supabase/migrations/${filename}`,'utf8');assert.equal(sql,readFileSync(`docs/drafts/upload/${filename}`,'utf8'));
+ const filename='20261005070410_upload_storage_session_boundary.sql';const sql=readFileSync(`supabase/migrations/${filename}`,'utf8');assert.equal(sql,readFileSync(`tests/fixtures/sql/upload/${filename}`,'utf8'));
  const predicates=[`exists(select 1 from supabase_migrations.schema_migrations where version='20261005070410'and name='upload_storage_session_boundary'and statements=array[${quote(sql)}])`];
  const functions=[...sql.matchAll(/create function public\.([a-z_]+)\([\s\S]*?as \$\$([\s\S]*?)\$\$/gi)];assert.equal(functions.length,3);
  const followup=readFileSync('supabase/migrations/20261005093526_upload_provider_neutral_rpc.sql','utf8');
