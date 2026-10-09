@@ -1,0 +1,15 @@
+.demo aside nav a[aria-current="page"],
+.demo > div:last-child nav a[aria-current="page"] {
+  background: #eaf0fa;
+  color: #5f7fae;
+}
+.demo > header {
+  background: rgb(255 255 255 / 90%);
+  border-color: #e7edf6;
+}
+.demo > header input {
+  background: #f5f7fb;
+}
+.demo > header input::placeholder {
+  color: #94a3b8;
+}

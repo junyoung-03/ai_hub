@@ -1376,3 +1376,23 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 현재 브라우저에서 실제 저장된 Gemini 합성 PDF 결과 및 Classification/Action writes를 재검증했다.
 추가 합성 OCR 이미지의 분석503과 미실행 외부 Google 재수집을 성공으로 판정하지 않는다.
 검증 결과/차이/남은 GAP은 `docs/POLISHED_VISUAL_TRANSPLANT_REPORT.md`를 따른다.
+
+## 41. 승인된 검색 중심 UI (2026-10-08 설계 / 2026-10-09 Production 승인)
+
+사용자의 로컬 UI 재구성 요청에 따라 16절 및 40절의 전역 검색/독립 검색 메뉴 표현을
+검색 중심 UI로 대체한다. 2026-10-09 사용자가 현재 Landing/App UI의 Git 반영과 Production 배포를 승인했다. 기존 기능/API/DB 계약은 유지한다.
+
+- Desktop sidebar와 Mobile bottom navigation은 오늘 / 자료 / 할 일 / 설정 네 메뉴다.
+- Home에서 검색을 시작한다. `/search?q=...`는 결과 전용이며 빈 q/공백 q는 `/`로 이동한다.
+  결과 화면에서 검색어를 수정할 수 있다. 독립 빈 검색 시작 화면과 추천 질문은 제공하지 않는다.
+- Header는 간결한 브랜드 / 자료 추가 / 프로필이다. 자료 추가는 기존 업로드 또는 직접입력
+  컨트롤로 이동하고 해당 패널을 연다. 프로필에는 기존 계정 이메일 / 설정·연결 관리 / 로그아웃을 둔다.
+  새 계정 기능은 추가하지 않으며 기존 local signOut 동작을 재사용한다.
+- 밝은 데모 배경과 옅은 블루를 보호된 AppShell에 통일한다. Settings/Detail 기능과 내부 구조는 유지한다.
+- Home은 검색 → 확정 마감 → 이번 주 Event → 최근 자료 순서다. Action/Deadline과 Event를 구분한다.
+- Search의 현재 계약에는 생성형 AI 답변과 독립 Event 결과 필드가 없다. ‘검색 정리’는 반환된
+  자료/Action/확정 마감 건수만 요약한다. Calendar는 관련 자료로 표시하고 상세의 기존 일정으로 연결한다.
+  AI 답변/이벤트를 추측하거나 Search 계약·ranking·backend를 변경하지 않는다.
+- 기존 Auth/RLS/Google OAuth/Sync/API/DB/migration을 보존한다. 승인된 Landing을 공개 루트와 /landing에 연결하고, 보호된 페이지는 기존 인증 경계를 유지한다.
+  Shell·본문 skeleton을 유지하고 전체 화면 로딩은 추가하지 않는다.
+- 로컬 포트는 사용자 지정 3001이다. 검증 및 한계는 docs/LOCAL_UI_PREVIEW.md에 기록한다.

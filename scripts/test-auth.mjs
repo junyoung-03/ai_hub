@@ -126,10 +126,10 @@ test("proxy protects all specified routes and preserves refreshed cookies/cache 
         } } };
       } },
     });
-    for (const path of ["/", "/library", "/search", "/actions", "/settings", "/library/nested", "/login", "/auth/callback", "/library-public"]) {
+    for (const path of ["/", "/landing", "/library", "/search", "/actions", "/settings", "/library/nested", "/login", "/auth/callback", "/library-public"]) {
       const request = new NextRequest(`http://localhost${path}`);
       const response = await proxy.updateSession(request);
-      const isProtected = ["/", "/library", "/search", "/actions", "/settings", "/library/nested"].includes(path);
+      const isProtected = ["/library", "/search", "/actions", "/settings", "/library/nested"].includes(path);
       assert.equal(response.headers.get("location"), !signedIn && isProtected ? "http://localhost/login" : null);
       assert.equal(response.cookies.get("test-session").value, "refreshed");
       assert.equal(request.cookies.get("test-session").value, "refreshed");
