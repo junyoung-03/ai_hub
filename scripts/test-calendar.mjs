@@ -162,11 +162,13 @@ test("known cancellation uses fresh GET with prior CAS; unseen cancellation crea
   assert.equal((await unseen.collect()).skipped, 1); assert.equal(unseen.saves.length, 0);
 });
 test("stale/CAS, disconnect and unauthorized RPC rejection preserve failures without success claims", async () => {
-  for (const code of ["40001", "22023", "42501"]) {
+  for (const code of ["40001", "PT409", "22023", "42501"]) {
+    const errors=[];const policy={...contract,CalendarError:class extends contract.CalendarError{constructor(code){super(code);errors.push(code);}}};
     const h = collectionHarness([page([raw()])], { id: "same-item", updated_at: old, metadata: {} },
-      async () => ({ data: null, error: { code, message: "synthetic-secret" } }));
+      async () => ({ data: null, error: { code, message: "synthetic-secret" } }),policy);
     const before = JSON.stringify(h.extra), result = await h.collect();
     assert.equal(result.failed, 1); assert.equal(result.complete, false); assert.equal(result.updated, 0);
+    assert.equal(h.saves.length,1);assert.equal(errors[0],["40001","PT409"].includes(code)?"SOURCE_CHANGED":"STORAGE_FAILED");
     assert.equal(JSON.stringify(h.extra), before); assert.ok(!JSON.stringify(result).includes("secret"));
   }
 });

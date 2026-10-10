@@ -214,7 +214,7 @@ test("scope SQL and unapplied ITEM draft preserve schema, privileges, checkpoint
 
 test("real scope persistence helper encrypts credentials and rejects foreign/stale/disconnected/partial candidates before RPC", async () => {
   const encryption = load("src/lib/google/token-encryption.ts");
-  let connection = current(), principal = userId;
+  let connection = current(), principal = userId, rpcError = null;
   const calls = [];
   const cookieClient = { from() {
     const query = { select() { return query; }, eq() { return query; }, order() { return query; },
@@ -227,7 +227,7 @@ test("real scope persistence helper encrypts credentials and rejects foreign/sta
     "@/lib/supabase/server": { createClient: async () => cookieClient },
     "@/lib/supabase/auth": { requireUser: async () => ({ id: principal }) },
     "@/lib/supabase/admin": { createAdminClient: () => ({ async rpc(name, args) {
-      calls.push({ name, args }); return { data: connectionId, error: null };
+      calls.push({ name, args }); return { data: rpcError?null:connectionId, error: rpcError };
     } }) },
   });
   const candidate = { userId, connectionId, providerAccountId: context.accountId, accountEmail: "fixture@example.invalid",
@@ -248,4 +248,5 @@ test("real scope persistence helper encrypts credentials and rejects foreign/sta
   assert.ok(!JSON.stringify(calls[0].args).includes("synthetic-refresh"));
   assert.equal(calls[0].args.p_expected_access_token_ciphertext, candidate.expectedAccessTokenCiphertext);
   assert.ok(!("p_gmail_history_id" in calls[0].args));
+  for(const code of ["40001","PT409"]){rpcError={code,message:"synthetic-private-CAS"};const count=calls.length;await assert.rejects(()=>connectionsApi.persistGoogleScopeUpgrade(candidate),e=>e.name==="GoogleConnectionStorageUnavailableError"&&!e.message.includes("private"));assert.equal(calls.length,count+1);}
 });

@@ -1,3 +1,4 @@
+import {conflictBlocks} from './rpc-conflicts-migration.mjs';
 // Explicit development-only RPC assertions. Synthetic users/tokens and draft DDL roll back.
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -49,22 +50,22 @@ begin
     perform public.upgrade_google_connection_scopes(other_u,c,'drive3-synthetic','drive3@example.invalid',drive_scopes,saved.updated_at,'access-old',
       'bad-access','iv','tag','bad-refresh','iv','tag',now()+interval '1 hour',1::smallint);
     raise exception 'Foreign user unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.upgrade_google_connection_scopes(u,c,'different-account','drive3@example.invalid',drive_scopes,saved.updated_at,'access-old',
       'bad-access','iv','tag','bad-refresh','iv','tag',now()+interval '1 hour',1::smallint);
     raise exception 'Different account unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.upgrade_google_connection_scopes(u,c,'drive3-synthetic','drive3@example.invalid',drive_scopes,saved.updated_at-interval '1 second','access-old',
       'bad-access','iv','tag','bad-refresh','iv','tag',now()+interval '1 hour',1::smallint);
     raise exception 'Stale connection unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.upgrade_google_connection_scopes(u,c,'drive3-synthetic','drive3@example.invalid',drive_scopes,saved.updated_at,'stale-access',
       'bad-access','iv','tag','bad-refresh','iv','tag',now()+interval '1 hour',1::smallint);
     raise exception 'Stale token unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   execute 'reset role';
   select md5(row_to_json(t)::text) into after_token from private.google_connection_tokens t where connection_id=c;
   if after_token is distinct from before_token or (select row_to_json(x)::jsonb from public.connections x where id=c)
@@ -104,7 +105,7 @@ begin
     perform public.upgrade_google_connection_scopes(u,c,'drive3-synthetic','drive3@example.invalid',drive_scopes,saved.updated_at,'access-refreshed',
       'bad-access','iv','tag','bad-refresh','iv','tag',now()+interval '1 hour',1::smallint);
     raise exception 'Disconnected upgrade unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   execute 'reset role';
   if exists(select 1 from private.google_connection_tokens where connection_id=c)
     or not exists(select 1 from public.connections where id=c and status='disconnected' and sync_state=saved.sync_state)
@@ -118,7 +119,7 @@ const draft = process.argv.includes("--with-draft")
     .replace(/^BEGIN;\s*$/m, "").replace(/^COMMIT;\s*$/m, "") : "";
 mkdirSync("supabase/.temp", { recursive: true });
 const file = "supabase/.temp/drive3-runtime.sql";
-writeFileSync(file, "begin;\n" + draft + sql + "\nrollback;\n");
+writeFileSync(file, "begin;set local lock_timeout='5s';\n" + draft + (process.argv.includes("--with-conflict-migration")?conflictBlocks():"") + sql + "\nrollback;\n");
 try {
   const child = spawnSync(process.platform === "win32" ? "cmd.exe" : "npx", process.platform === "win32"
     ? ["/d", "/s", "/c", `npx --yes supabase db query --linked --project-ref ${project} --file ${file}`]

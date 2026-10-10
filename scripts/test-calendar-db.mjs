@@ -1,3 +1,4 @@
+import {conflictBlocks} from './rpc-conflicts-migration.mjs';
 // Real ai-hub-dev PostgreSQL/RPC/RLS checks; all synthetic fixtures roll back.
 import assert from "node:assert/strict";
 import { load } from "./calendar-loader.mjs";
@@ -14,7 +15,8 @@ function call(name,{user="u",stamp="null",hash}={}) {
   return `public.persist_calendar_item(${user},c,${quote(e.eventId)},${quote(e.summary)},${nullable(e.htmlLink)},${quote(content.text)},${quote(hash??content.hash)},${nullable(e.created)}::timestamptz,${nullable(e.updated)}::timestamptz,${quote(JSON.stringify(e))}::jsonb,${stamp})`;
 }
 const reject=(expression,code,label)=>`begin perform ${expression}; raise exception 'C3_${label}'; exception when sqlstate '${code}' then null; end;`;
-const sql=`begin;
+const sql=`begin;set local lock_timeout='5s';
+${process.argv.includes("--with-conflict-migration")?conflictBlocks():""}
 do $test$
 declare u uuid:=gen_random_uuid(); other_u uuid:=gen_random_uuid(); c uuid; i uuid; a uuid:=gen_random_uuid(); r jsonb; stamp timestamptz;
   item_snapshot jsonb; class_snapshot jsonb; action_snapshot jsonb; evidence_snapshot jsonb; conn_snapshot jsonb; token_snapshot jsonb; fn record; removed text;
@@ -44,7 +46,7 @@ begin
   select to_jsonb(t) into evidence_snapshot from public.action_sources t where item_id=i;
   execute 'set local role service_role';
   ${reject(call('changed',{user:'other_u',stamp:'stamp'}),'22023','FOREIGN')}
-  ${reject(call('changed',{stamp:"stamp-interval '1 second'"}),'40001','STALE_CAS')}
+  ${reject(call('changed',{stamp:"stamp-interval '1 second'"}),'PT409','STALE_CAS')}
   ${reject(call('changed',{stamp:'stamp',hash:'0'.repeat(64)}),'22023','HASH')}
   execute 'reset role';
   if (select to_jsonb(t) from public.items t where id=i)<>item_snapshot then raise exception 'C3_ATOMIC_REJECT'; end if;
@@ -56,7 +58,7 @@ begin
   if r->>'outcome'<>'updated' or r->>'item_id'<>i::text then raise exception 'C3_UPDATE'; end if;
   select to_jsonb(t),updated_at into item_snapshot,stamp from public.items t where id=i;
   execute 'set local role service_role';
-  ${reject(call('normal',{stamp:'stamp'}),'40001','STALE_SOURCE')}
+  ${reject(call('normal',{stamp:'stamp'}),'PT409','STALE_SOURCE')}
   r:=${call('cancel',{stamp:'stamp'})}; execute 'reset role';
   if r->>'outcome'<>'updated' or r->>'item_id'<>i::text or not exists(select 1 from public.items where id=i and metadata#>>'{calendar,status}'='cancelled' and content_text=item_snapshot->>'content_text' and metadata#>'{calendar,start}'=item_snapshot#>'{metadata,calendar,start}' and original_url is not distinct from item_snapshot->>'original_url') then raise exception 'C3_CANCEL'; end if;
   select to_jsonb(t),updated_at into item_snapshot,stamp from public.items t where id=i;
@@ -73,9 +75,9 @@ begin
   foreach removed in array array['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/drive.metadata.readonly','https://www.googleapis.com/auth/documents.readonly','https://www.googleapis.com/auth/calendar.events.owned.readonly'] loop
     begin perform public.upgrade_google_calendar_scopes(u,c,'calendar3-fixture','fixture@example.invalid',array_remove(granted,removed),(conn_snapshot->>'updated_at')::timestamptz,'synthetic-access','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint); raise exception 'C3_PARTIAL_GRANT'; exception when invalid_parameter_value then null; end;
   end loop;
-  ${reject("public.upgrade_google_calendar_scopes(other_u,c,'calendar3-fixture','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'synthetic-access','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint)",'40001','FOREIGN_UPGRADE')}
-  ${reject("public.upgrade_google_calendar_scopes(u,c,'other-account','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'synthetic-access','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint)",'40001','ACCOUNT_UPGRADE')}
-  ${reject("public.upgrade_google_calendar_scopes(u,c,'calendar3-fixture','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'stale','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint)",'40001','TOKEN_CAS')}
+  ${reject("public.upgrade_google_calendar_scopes(other_u,c,'calendar3-fixture','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'synthetic-access','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint)",'PT409','FOREIGN_UPGRADE')}
+  ${reject("public.upgrade_google_calendar_scopes(u,c,'other-account','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'synthetic-access','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint)",'PT409','ACCOUNT_UPGRADE')}
+  ${reject("public.upgrade_google_calendar_scopes(u,c,'calendar3-fixture','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'stale','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint)",'PT409','TOKEN_CAS')}
   if (select to_jsonb(t) from public.connections t where id=c)<>conn_snapshot or (select to_jsonb(t) from private.google_connection_tokens t where connection_id=c)<>token_snapshot then raise exception 'C3_UPGRADE_ATOMIC'; end if;
   perform public.upgrade_google_calendar_scopes(u,c,'calendar3-fixture','fixture@example.invalid',granted,(conn_snapshot->>'updated_at')::timestamptz,'synthetic-access','new','iv','tag','synthetic-refresh','iv','tag',now()+interval '1 hour',1::smallint);
   if not exists(select 1 from public.connections where id=c and sync_state=conn_snapshot->'sync_state' and last_synced_at=(conn_snapshot->>'last_synced_at')::timestamptz and connected_at=(conn_snapshot->>'connected_at')::timestamptz) then raise exception 'C3_CHECKPOINT'; end if;

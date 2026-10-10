@@ -26,3 +26,8 @@ test('query cache keys include effective filter/timezone/version; user travels t
  const provider={identity:c.ACTIVE_EMBEDDING};for(const filters of [{},{source:['gmail']},{from:'2026-10-01',to:'2026-10-02'}])await lib.search({query:'합성',semantic:true,filters},provider,store);
  assert.equal(new Set(keys).size,3);assert.ok(users.every(v=>v===owner));assert.equal(keys[0],c.hash(JSON.stringify([c.ACTIVE_EMBEDDING.version,'합성',{source:[],format:[],from:null,to:null},'Asia/Seoul'])));
 });
+
+test('Search RPC conflicts preserve STALE_INPUT/409 and one RPC; unrelated failures stay 503',async()=>{
+ const lib=loadSearch('src/lib/search/service.ts',{'@/lib/supabase/auth':{requireUser:async()=>({id:owner})},'@/lib/supabase/admin':{createAdminClient:()=>null}});
+ for(const name of ['search_runtime','search_index'])for(const code of ['40001','PT409','XX000']){let calls=0;const store=lib.searchStore({rpc:async()=>{calls++;return {error:{code}};}});await assert.rejects(()=>store.call(name,{}),e=>e.code===(code==='XX000'?'SEARCH_STORAGE_UNAVAILABLE':'STALE_INPUT')&&e.status===(code==='XX000'?503:409));assert.equal(calls,1);}
+});

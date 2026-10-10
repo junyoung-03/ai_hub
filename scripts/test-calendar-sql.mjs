@@ -1,6 +1,7 @@
 // Offline PostgreSQL/WASM rehearsal. Never reads .env, connects to Supabase, or persists a database.
 // The engine is a temporary test tool, deliberately absent from product dependencies.
 import assert from "node:assert/strict";
+import {applyConflictMigration} from "./rpc-conflicts-migration.mjs";
 import { readFileSync } from "node:fs";
 import { load } from "./calendar-loader.mjs";
 const { PGlite } = await import("../supabase/.temp/calendar2-db/node_modules/@electric-sql/pglite/dist/index.js");
@@ -31,7 +32,7 @@ async function persist(e, snapshot=null, user=owner, overrides={}) {
   return scalar("select public.persist_calendar_item($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10::jsonb,$11::timestamptz)", Object.values(args));
 }
 const item=async()=>one("select *,updated_at::text as snapshot from public.items where external_id='event1'");
-async function rejected(fn, code="40001") {
+async function rejected(fn, code="PT409") {
   let didReject=false;
   try { await fn(); } catch(error) { assert.equal(error.code,code); didReject=true; }
   assert.ok(didReject,"Expected SQL rejection");
@@ -53,6 +54,7 @@ try {
   // Only preservation sentinels; this does not reproduce production ancillary-table RLS.
   await db.exec("create table public.classifications(item_id uuid,user_tags text[]); create table public.actions(id int,status text); create table public.action_sources(id int,evidence text);");
   await db.exec(scopeSql); await db.exec(itemSql);
+  await applyConflictMigration(db,["persist_calendar_item","upgrade_google_calendar_scopes"]);
   await db.query("insert into public.users values ($1),($2)",[owner,other]);
   await db.query("insert into public.connections(id,user_id,provider_account_id,account_email,status,scopes,sync_state,connected_at,last_synced_at,updated_at) values($1,$2,'synthetic-sub','fixture@example.invalid','connected',$3,$4::jsonb,$5,$5,$5)",
     [connection,owner,scopes,JSON.stringify({gmail:{history_id:"123",initial_collection:{complete:true}},drive:{preserve:true}}),old]);

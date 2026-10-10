@@ -1,3 +1,4 @@
+import {conflictBlocks} from './rpc-conflicts-migration.mjs';
 // Development-only synthetic RPC/RLS checks. Every fixture and optional DDL rolls back.
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -53,17 +54,17 @@ begin
     perform public.persist_drive_item(u,c,'file1','Synthetic','https://docs.google.com/document/d/file1/edit',changed,changed_h,
       '2026-09-01','2026-09-30','{}',stamp);
     raise exception 'Older source unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.persist_drive_item(u,c,'file1','Synthetic','https://docs.google.com/document/d/file1/edit',changed,changed_h,
       '2026-09-01','2026-10-01','{}',stamp);
     raise exception 'Conflicting same version unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.persist_drive_item(u,c,'file1','Synthetic','https://docs.google.com/document/d/file1/edit',changed,changed_h,
       '2026-09-01','2026-10-02','{}',stamp-interval '1 second');
     raise exception 'Stale ITEM unexpectedly accepted';
-  exception when serialization_failure then null; end;
+  exception when sqlstate 'PT409' then null; end;
   begin
     perform public.persist_drive_item(u,c,'huge','Synthetic','https://docs.google.com/document/d/huge/edit',repeat('a',100001),repeat('a',64),
       '2026-09-01','2026-10-01','{}',null);
@@ -121,7 +122,7 @@ const draft = process.argv.includes("--with-draft") ? readFileSync("tests/fixtur
   .replace(/^begin;\s*$/m, "").replace(/^commit;\s*$/m, "") : "";
 mkdirSync("supabase/.temp", { recursive: true });
 const file = "supabase/.temp/drive-item-runtime.sql";
-writeFileSync(file, "begin;\n" + draft + tests + "\nrollback;\n");
+writeFileSync(file, "begin;set local lock_timeout='5s';\n" + draft + (process.argv.includes("--with-conflict-migration")?conflictBlocks():"") + tests + "\nrollback;\n");
 try {
   const child = spawnSync("cmd.exe", ["/d", "/s", "/c", `npx --yes supabase db query --linked --project-ref ${project} --file ${file}`],
     { encoding: "utf8", timeout: 60000 });

@@ -92,7 +92,7 @@ export async function collectDrive(input: DriveCollectionInput): Promise<DriveCo
           p_drive_metadata: { ...extracted.metadata, parents: after.parents, mimeType: after.mimeType,
             webViewLink: after.webViewLink ?? null, collectedAt: new Date().toISOString() } as Json,
         }).abortSignal(signal);
-        if (saveError) throw new DriveError(saveError.code === "40001" ? "SOURCE_CHANGED" : "STORAGE_FAILED");
+        if (saveError) throw new DriveError(["40001", "PT409"].includes(saveError.code) ? "SOURCE_CHANGED" : "STORAGE_FAILED");
         const saved = object(data);
         if (typeof saved.item_id !== "string" || !["created", "updated", "reused"].includes(String(saved.outcome))) throw new DriveError("STORAGE_FAILED");
         return { fileId, outcome: saved.outcome as "created" | "updated" | "reused", itemId: saved.item_id };

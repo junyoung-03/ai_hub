@@ -73,7 +73,7 @@ export async function collectCalendar(): Promise<CalendarCollectionResult> {
             p_source_created_at: event.created, p_source_updated_at: event.updated,
             p_calendar_metadata: event as unknown as Json, p_expected_item_updated_at: existing?.updated_at ?? null,
           }).abortSignal(controller.signal);
-          if (saveError) throw new CalendarError(saveError.code === "40001" ? "SOURCE_CHANGED" : "STORAGE_FAILED");
+          if (saveError) throw new CalendarError(["40001", "PT409"].includes(saveError.code) ? "SOURCE_CHANGED" : "STORAGE_FAILED");
           const saved = record(data);
           if (!["created", "updated", "reused", "skipped"].includes(String(saved.outcome))) throw new CalendarError("STORAGE_FAILED");
           result[saved.outcome as "created" | "updated" | "reused" | "skipped"]++;

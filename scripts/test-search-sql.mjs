@@ -1,5 +1,6 @@
 // Ephemeral actual PostgreSQL + pgvector. No network, secrets, remote data or provider calls.
 import assert from 'node:assert/strict';
+import {applyConflictMigration} from './rpc-conflicts-migration.mjs';
 import {readFileSync} from 'node:fs';
 import {loadSearch} from './search-loader.mjs';
 const {PGlite}=await import('../supabase/.temp/calendar2-db/node_modules/@electric-sql/pglite/dist/index.js');
@@ -32,7 +33,8 @@ try {
  await db.exec(`create unique index search_chunks_item_chunk_uidx on public.search_chunks(item_id,chunk_index) where item_id is not null;
  alter table public.search_chunks enable row level security;create policy chunks_own on public.search_chunks to authenticated using(user_id=auth.uid());
  grant select on public.search_chunks to authenticated;grant select,insert,update,delete on public.search_chunks to service_role;`);
- await db.exec(sql);await db.exec(readFileSync('supabase/migrations/20261005121340_search_rank_ties.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261005115533_search_coverage.sql','utf8'));await db.query('insert into public.users values($1),($2)',[owner,other]);
+ await db.exec(sql);await db.exec(readFileSync('supabase/migrations/20261005121340_search_rank_ties.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261005115533_search_coverage.sql','utf8'));await applyConflictMigration(db,['search_runtime','search_index']);await db.query('insert into public.users values($1),($2)',[owner,other]);
+ await check('stale index snapshot fails PT409 once; busy lease remains 55P03',async()=>{await seed(99,'drive','fixture','content'); const row=(await db.query('select updated_at::text stamp from public.items where id=$1',[id(99)])).rows[0];const payload={fingerprint:c.hash('fixture'),snapshot:row.stamp,chunkCount:1,semantic:false};await assert.rejects(()=>index('claim',id(99),{...payload,snapshot:'2000-01-01T00:00:00Z'}),e=>e.code==='PT409'&&e.message==='SEARCH_STALE_INPUT');await index('claim',id(99),payload);await assert.rejects(()=>index('claim',id(99),payload),e=>e.code==='55P03');await assert.rejects(()=>index('finish',id(99),{},id(998)),e=>e.code==='PT409'&&e.message==='SEARCH_INDEX_STALE');await db.query('delete from public.items where id=$1',[id(99)]);});
  await seed(1,'gmail','농협 안내','농협 금융 지원. 정확한 원문 문구입니다. 😀');await seed(2,'drive','상담 자료','심리상담 프로그램 안내');
  await seed(3,'calendar','회의 일정','회의 장소 강의실',owner,{calendar:{start:{date:'2026-10-05'},end:{date:'2026-10-06'},allDay:true}});
  await seed(4,'upload','제출 PDF','PDF 원문 제출 자료');await seed(5,'upload','image OCR','이미지에서 추출한 한글 OCR');await seed(6,'gmail','농협 안내 타인','다른 사용자 secret',other);
@@ -82,6 +84,7 @@ try {
  await check('shared atomic rate budget, query-cache lease, version and user segregation',async()=>{
   for(let i=0;i<30;i++)assert.equal((await runtime('rate',{category:'request'})).allowed,true);assert.equal((await runtime('rate',{category:'request'})).allowed,false);assert.equal((await runtime('rate',{category:'request'},other)).allowed,true);
   const payload={key:c.hash('query'),version:c.ACTIVE_EMBEDDING.version},cl=await runtime('query_claim',payload);assert.equal(cl.state,'claimed');assert.equal((await runtime('query_claim',payload)).state,'busy');
+  await assert.rejects(()=>runtime('query_finish',{...payload,attempt:id(999),embedding:JSON.stringify(vec)}),e=>e.code==='PT409'&&e.message==='SEARCH_CACHE_STALE');
   await runtime('query_finish',{...payload,attempt:cl.attempt,embedding:JSON.stringify(vec)});assert.equal((await runtime('query_claim',payload)).state,'cached');assert.equal((await runtime('query_claim',payload,other)).state,'claimed');
  });
  await check('stale ITEM and locator-only updates invalidate old semantic data; AI metadata does not queue',async()=>{
@@ -89,7 +92,7 @@ try {
   assert.equal((await index('read',id(2))).state,'complete');assert.equal((await candidates('unrelated synonym',{v:vec}))[0].itemId,id(2));
   await db.query("update public.items set content_text='새 원문',updated_at=now() where id=$1",[id(2)]);
   assert.equal((await index('read',id(2))).state,'pending');assert.equal((await candidates('unrelated synonym',{v:vec})).length,0);
-  await assert.rejects(()=>index('write',id(2),{chunk:prepared.chunks[0],embedding:JSON.stringify(vec)},attempt),e=>e.code==='40001');
+  await assert.rejects(()=>index('write',id(2),{chunk:prepared.chunks[0],embedding:JSON.stringify(vec)},attempt),e=>e.code==='PT409');
   const a=(await candidates('해야 할 일'))[0],snapshot=await runtime('snapshot',{context:'action-delete',version:c.ACTIVE_EMBEDDING.version,results:[a],info:{}});
   await db.query('delete from public.items where id=$1',[id(4)]);
   assert.equal((await runtime('page',{session:snapshot.id,context:'action-delete',version:c.ACTIVE_EMBEDDING.version,offset:0,limit:20})).results.length,0);

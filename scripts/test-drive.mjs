@@ -95,7 +95,7 @@ test("429/5xx retry only once, access errors never retry and missing Drive conse
   }
   await assert.rejects(clientWith(async () => { throw new Error("Unexpected request"); }, scopes.slice(0, 1)), /DRIVE_CONSENT_REQUIRED/);
 });
-function collector({ existing = null, before = file(), after = before, text = "Body", ids = ["file1"], limits, list, analysed = false, candidateError = false } = {}) {
+function collector({ existing = null, before = file(), after = before, text = "Body", ids = ["file1"], limits, list, analysed = false, candidateError = false, persistError = null } = {}) {
   const calls = { docs: 0, metadata: 0, writes: [], inFlight: 0, peak: 0 };
   const fixtureContract = limits ? { ...contract, DRIVE_LIMITS: { ...contract.DRIVE_LIMITS, ...limits } } : contract;
   const reader = (connection = false) => {
@@ -115,7 +115,7 @@ function collector({ existing = null, before = file(), after = before, text = "B
     "@/lib/supabase/server": { async createClient() { return { from(name) { return reader(name === "connections"); } }; } },
     "@/lib/supabase/admin": { createAdminClient() { return { rpc(name, args) {
       assert.equal(name, "persist_drive_item"); calls.writes.push(args);
-      return { async abortSignal() { return { data: { item_id: existing?.id ?? "new-item", outcome: existing ? "updated" : "created" }, error: null }; } };
+      return { async abortSignal() { return { data: { item_id: existing?.id ?? "new-item", outcome: existing ? "updated" : "created" }, error: persistError }; } };
     } }; } },
     "@/lib/google/drive-contract": fixtureContract, "@/lib/google/docs-text": extractor,
     "@/lib/google/drive-client": { async createDriveClient() { return {
@@ -213,4 +213,9 @@ test("persist RPC draft forces source, locks connection before ITEM, validates h
   assert.match(sql, /'drive','document',p_file_id,null/);
   assert.doesNotMatch(sql, /(?:update|delete from|insert into) public\.(?:classifications|actions|action_sources)/i);
   assert.doesNotMatch(sql, /create (?:table|index)|alter table|create policy|http_get/i);
+});
+
+test("Drive RPC stale conflict maps to SOURCE_CHANGED exactly once with no recollection",async()=>{
+ for(const code of ["40001","PT409"]){const h=collector({persistError:{code}});const result=await h.collect();assert.equal(result.results[0].code,"SOURCE_CHANGED");assert.equal(result.failed,1);assert.equal(h.calls.writes.length,1);assert.equal(h.calls.docs,1);}
+ const h=collector({persistError:{code:"XX000"}});assert.equal((await h.collect()).results[0].code,"STORAGE_FAILED");
 });

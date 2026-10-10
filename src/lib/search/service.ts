@@ -13,8 +13,8 @@ export function searchStore(admin: Admin = createAdminClient()) {
   const rpc = admin.rpc.bind(admin) as unknown as (name: RpcName, args: Record<string, Json | undefined>) => PromiseLike<{ data: unknown; error: { code?: string } | null }>;
   return { admin, async call(name: RpcName, args: Record<string, Json | undefined>): Promise<unknown> {
     const { data, error } = await rpc(name, args);
-    if (error) throw new SearchError(error.code === "P0002" ? "NOT_FOUND" : error.code === "55P03" ? "INDEX_BUSY" : error.code === "40001" ? "STALE_INPUT" : "SEARCH_STORAGE_UNAVAILABLE",
-      error.code === "P0002" ? 404 : error.code === "55P03" || error.code === "40001" ? 409 : 503);
+    if (error) throw new SearchError(error.code === "P0002" ? "NOT_FOUND" : error.code === "55P03" ? "INDEX_BUSY" : ["40001", "PT409"].includes(error.code ?? "") ? "STALE_INPUT" : "SEARCH_STORAGE_UNAVAILABLE",
+      error.code === "P0002" ? 404 : error.code === "55P03" || ["40001", "PT409"].includes(error.code ?? "") ? 409 : 503);
     return data;
   } };
 }
