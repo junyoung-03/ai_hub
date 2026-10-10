@@ -19,7 +19,7 @@ export default async function LoginPage({
       <section aria-labelledby="login-title" className="w-full max-w-sm space-y-6 rounded-xl border bg-card p-8 shadow-sm">
         <div className="space-y-3">
           <p className="text-xs font-medium tracking-widest text-muted-foreground">COLLECT · FIND · ACT</p>
-          <h1 id="login-title" className="text-2xl font-semibold tracking-tight">AI 통합 정보 허브</h1>
+          <h1 id="login-title" className="text-2xl font-semibold tracking-tight">etc.</h1>
           <p className="text-sm text-muted-foreground">Google 계정으로 로그인해 시작하세요.</p>
         </div>
         {message && <p role="alert" className="text-sm text-destructive">{message}</p>}

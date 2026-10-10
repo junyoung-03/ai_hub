@@ -10,7 +10,7 @@ export function LegalDocument({ title, subtitle, children }: {
     <div className="min-h-screen bg-[#f6f5f2] text-[#1c1b19]">
       <div className="mx-auto w-full max-w-[880px] px-5 sm:px-8">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6e3dc] py-6">
-          <span className="text-sm font-semibold">AI 통합 정보 허브</span>
+          <span className="text-sm font-semibold">etc.</span>
           <Link href="/" className="inline-flex min-h-11 items-center text-sm underline underline-offset-4">홈으로</Link>
         </header>
         <main className="py-10 sm:py-14">
@@ -22,7 +22,7 @@ export function LegalDocument({ title, subtitle, children }: {
           </article>
         </main>
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6e3dc] py-6 text-sm leading-6 text-[#6f6b64]">
-          <p>AI 통합 정보 허브 · 시행일 2026년 10월 8일</p>
+          <p>etc. · 시행일 2026년 10월 8일</p>
           <nav aria-label="법적 안내" className="flex flex-wrap gap-4">
             <Link href="/privacy" className="inline-flex min-h-11 items-center underline underline-offset-4">개인정보처리방침</Link>
             <Link href="/terms" className="inline-flex min-h-11 items-center underline underline-offset-4">서비스 이용약관</Link>

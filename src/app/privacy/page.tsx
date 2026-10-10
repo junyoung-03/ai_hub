@@ -2,17 +2,17 @@ import type { Metadata } from "next";
 import { LegalDocument } from "@/components/legal/legal-document";
 
 export const metadata: Metadata = {
-  title: "개인정보처리방침 | AI 통합 정보 허브",
-  description: "AI 통합 정보 허브 개인정보처리방침",
+  title: "개인정보처리방침 | etc.",
+  description: "etc. 개인정보처리방침",
   robots: { index: true, follow: true },
 };
 
 export default function PrivacyPage() {
   return (
-    <LegalDocument title="개인정보처리방침" subtitle="AI 통합 정보 허브 개인정보처리방침">
+    <LegalDocument title="개인정보처리방침" subtitle="etc. 개인정보처리방침">
       <section>
         <h2>1. 서비스 개요</h2>
-        <p>AI 통합 정보 허브는 사용자가 연결한 Google 서비스와 직접 입력하거나 업로드한 자료를 수집·분석하여 통합 검색, 분류, 일정·마감·할 일 관리를 지원합니다. 이 방침은 서비스가 처리하는 정보와 이용 목적, 보호 방법 및 이용자의 권리를 안내합니다.</p>
+        <p>etc.는 사용자가 연결한 Google 서비스와 직접 입력하거나 업로드한 자료를 수집·분석하여 통합 검색, 분류, 일정·마감·할 일 관리를 지원합니다. 이 방침은 서비스가 처리하는 정보와 이용 목적, 보호 방법 및 이용자의 권리를 안내합니다.</p>
       </section>
       <section>
         <h2>2. 수집하는 정보</h2>

@@ -2,17 +2,17 @@ import type { Metadata } from "next";
 import { LegalDocument } from "@/components/legal/legal-document";
 
 export const metadata: Metadata = {
-  title: "서비스 이용약관 | AI 통합 정보 허브",
-  description: "AI 통합 정보 허브 서비스 이용약관",
+  title: "서비스 이용약관 | etc.",
+  description: "etc. 서비스 이용약관",
   robots: { index: true, follow: true },
 };
 
 export default function TermsPage() {
   return (
-    <LegalDocument title="서비스 이용약관" subtitle="AI 통합 정보 허브 서비스 이용약관">
+    <LegalDocument title="서비스 이용약관" subtitle="etc. 서비스 이용약관">
       <section>
         <h2>1. 목적</h2>
-        <p>이 약관은 AI 통합 정보 허브의 이용 조건과 사용자 및 서비스 운영자 간 기본적인 권리·의무를 정합니다.</p>
+        <p>이 약관은 etc.의 이용 조건과 사용자 및 서비스 운영자 간 기본적인 권리·의무를 정합니다.</p>
       </section>
       <section>
         <h2>2. 서비스 내용</h2>

@@ -1,6 +1,6 @@
 # docs/ai/AI_OUTPUT_SPEC.md
 
-# AI 통합 정보 허브 — AI Structured Output 명세 v0.2
+# etc. — AI Structured Output 명세 v0.2
 
 > 기준: 서비스 기획 및 개발 기준서 v0.5 + DB Migration v0.5 + API_SPEC v0.1  
 > 목적: Gemini가 비정형 ITEM을 분석한 뒤 서버가 안전하게 검증·저장할 수 있는 후보 JSON을 생성한다.

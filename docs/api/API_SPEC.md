@@ -1,6 +1,6 @@
 # docs/api/API_SPEC.md
 
-# AI 통합 정보 허브 API 명세 v0.1
+# etc. API 명세 v0.1
 
 > 기준 문서: 「AI 통합 정보 허브 — 서비스 기획 및 개발 기준서 v0.5」  
 > 개발 순서: Wireframe → DB Migration → API 명세 → AI Structured Output → 구현  
@@ -10,7 +10,7 @@
 
 ## 1. 목적
 
-본 문서는 AI 통합 정보 허브 v1의 Application API와 Internal API를 정의한다.
+본 문서는 etc. v1의 Application API와 Internal API를 정의한다.
 
 v1의 핵심 범위는 다음 3가지다.
 
