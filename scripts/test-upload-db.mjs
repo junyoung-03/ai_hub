@@ -36,7 +36,7 @@ begin
  execute 'set local role service_role';r:=${call('reserve',{payload:{leaseMs:120000}})};attempt:=(r->>'attempt')::uuid;
  ${reject(call('reserve'),'55P03','CONCURRENT')}
  r:=${call('claim',{attempt:'attempt'})};attempt:=(r->>'attempt')::uuid;
- ${reject(call('finish',{attempt:'gen_random_uuid()',payload:text}),'40001','STALE_ATTEMPT')}
+ ${reject(call('finish',{attempt:'gen_random_uuid()',payload:text}),'PT409','STALE_ATTEMPT')}
  r:=${call('fail',{attempt:'attempt',payload:{error:'OCR_FAILED'}})};
  execute 'reset role';if not exists(select 1 from public.items where id=i and processing_status='failed'and content_text is null)then raise exception 'C3_UPLOAD_FAIL_PARTIAL';end if;
  execute 'set local role service_role';r:=${call('claim')};attempt:=(r->>'attempt')::uuid;
@@ -52,7 +52,7 @@ begin
  if (r->>'itemId')::uuid=i then raise exception 'C3_UPLOAD_DIFFERENT_BYTES';end if;
  r:=${call('claim',{id:'sid2'})};attempt:=(r->>'attempt')::uuid;execute 'reset role';
  update private.upload_sessions set lease_until=clock_timestamp()-interval '1 second'where id=sid2;
- execute 'set local role service_role';${reject(call('finish',{id:'sid2',attempt:'attempt',payload:text}),'40001','EXPIRED_LEASE')}
+ execute 'set local role service_role';${reject(call('finish',{id:'sid2',attempt:'attempt',payload:text}),'PT409','EXPIRED_LEASE')}
  execute 'reset role';perform set_config('request.jwt.claim.sub',u::text,true);execute 'set local role authenticated';
  if (select count(*)from public.items where id=i)<>1 or not public.owns_upload_object(p,false)or public.owns_upload_object(u::text||'/../original.pdf',false)then raise exception 'C3_UPLOAD_OWNER_RLS';end if;
  ${reject(call('read'),'42501','SERVER_RPC')}
@@ -63,6 +63,7 @@ begin
  ${reject(`public.owns_upload_object(${quote('arbitrary/path')},false)`,'42501','ANON_PREDICATE')}
  execute 'reset role';
 end;$test$;select true passed;rollback;`;
+let stage='before-snapshot';
 if(process.argv.includes('--save-sql')){writeFileSync('supabase/.temp/upload3-runtime.sql',sql);console.log('Synthetic transaction prepared.');}
-else try{const before=query(snapshot)[0];assert.equal(query(sql)[0].passed,true);assert.deepEqual(query(snapshot)[0],before);console.log('PASS: real Upload RPC create/pending/complete/fail/retry/dedupe/idempotency/stale/owner/path and authenticated/foreign/anon ITEM RLS; existing graph preserved; synthetic users/data fully rolled back.');}
-catch(error){console.error(`FAIL: Upload DB Runtime (${error.message?.startsWith('DB check failed (')?error.message:'safe check failed'}); data/query suppressed.`);process.exitCode=1;}
+else try{const before=query(snapshot)[0];stage='runtime';assert.equal(query(sql)[0].passed,true);stage='preservation';assert.deepEqual(query(snapshot)[0],before);console.log('PASS: real Upload RPC create/pending/complete/fail/retry/dedupe/idempotency/stale/owner/path and authenticated/foreign/anon ITEM RLS; existing graph preserved; synthetic users/data fully rolled back.');}
+catch(error){console.error(`FAIL: Upload DB Runtime at ${stage} (${error.message?.startsWith('DB check failed (')?error.message:'safe check failed'}); data/query suppressed.`);process.exitCode=1;}

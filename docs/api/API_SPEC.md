@@ -1191,6 +1191,11 @@ uploaded→queued→extracting→queued, metadata.upload.extraction.status=pendi
 503 STORAGE_UNAVAILABLE/WORKER_UNAVAILABLE/OCR_UNAVAILABLE, 기타 validation/parser/OCR 오류 422.
 provider body/secret/filename/text/signed URL을 오류·로그에 담지 않는다.
 
+Upload RPC의 application-level `STALE_ATTEMPT`는 SQLSTATE `PT409`(HTTP 409)로 발생한다.
+PostgREST의 transaction retry를 유발하는 `40001`을 stale attempt/lease/CAS 오류에 사용하지 않는다.
+서버는 `PT409` + `STALE_ATTEMPT`를 기존 API의 `409 STALE_ATTEMPT`로 매핑한다.
+이전 DB와의 전환 호환을 위해 기존 `40001` 매핑은 유지한다. 실제 PostgreSQL serialization failure의 처리는 별도다.
+
 metadata.upload.extraction은 method/provider/providerVersion/execution/language/extractionVersion을 가진다.
 embedded/pdfjs/6.4.299/server/null 또는 ocr/tesseract.js/7.0.0/client/kor+eng만 새 저장에서 허용한다.
 mixed root는 method/provider/providerVersion/execution=mixed, language=kor+eng이며 정확한 origin은 page별로 남긴다.

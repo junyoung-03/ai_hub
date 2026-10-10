@@ -152,10 +152,10 @@ test('Vision adapter is disabled by default and only mock DOCUMENT_TEXT_DETECTIO
   const on=load('src/lib/uploads/managed-providers.ts',imports,globals),r=await on.ocrImage('fixture',AbortSignal.timeout(1000));
   assert.equal(payload.requests[0].features[0].type,'DOCUMENT_TEXT_DETECTION');assert.equal(r.text,'Keep low confidence');assert.equal(r.confidence,0.01);assert.ok(!JSON.stringify(r).includes('CANARY'));
 });
-function serviceHarness({bytes=pdfFixture(),state='pending',itemId=null,downloadError=false,finishError=false,finishStorageError=false,path,foreign=false,embedded=false,expired=false,missingOwner=false,emptyEmbedded=false}={}){
+function serviceHarness({bytes=pdfFixture(),state='pending',itemId=null,downloadError=false,finishError=false,finishCode='PT409',finishMessage='STALE_ATTEMPT',finishStorageError=false,path,foreign=false,embedded=false,expired=false,missingOwner=false,emptyEmbedded=false}={}){
   const calls=[];let attempt=null;
   const req=request(bytes);const storage={async download(){calls.push('download');return {data:new Blob([bytes]),error:downloadError?{}:null};},async createSignedUrl(p,seconds){calls.push(['signed',p,seconds]);return {data:{signedUrl:'https://private.invalid/mock'},error:null};},async createSignedUploadUrl(){calls.push('issue-url');return {data:{signedUrl:'https://private.invalid/mock-upload'},error:null};}};
-  const admin={storage:{from(bucket){assert.equal(bucket,'upload-originals');return storage;}},async rpc(name,args){assert.equal(name,'upload_session_rpc');calls.push(args.p_operation);if(args.p_operation==='read'&&missingOwner)return {error:{code:'22023'}};if(args.p_operation==='finish'&&finishError)return {error:{code:'40001'}};if(args.p_operation==='finish'&&finishStorageError)return {error:{code:'XX000'}};
+  const admin={storage:{from(bucket){assert.equal(bucket,'upload-originals');return storage;}},async rpc(name,args){assert.equal(name,'upload_session_rpc');calls.push(args.p_operation);if(args.p_operation==='read'&&missingOwner)return {error:{code:'22023'}};if(args.p_operation==='finish'&&finishError)return {error:{code:finishCode,message:finishMessage}};if(args.p_operation==='finish'&&finishStorageError)return {error:{code:'XX000'}};
     if(args.p_operation==='pending'){state='stored';itemId=id;}if(args.p_operation==='claim'){state='running';attempt=id;}if(args.p_operation==='fail')state='failed';if(args.p_operation==='finish')state='complete';
     if(args.p_operation==='reserve')attempt=id;if(args.p_operation==='release')attempt=null;
     return {data:{id,state,request:req,path:path??c.uploadPath(owner,id,'application/pdf'),itemId,attempt,rawHash:null,expiresAt:new Date(Date.now()+(expired?-60000:60000)).toISOString()},error:null};}};
@@ -208,4 +208,28 @@ test('upload HTTP contracts enforce origin/body bounds, reject fields and return
   for(const [error,status] of [[new AuthenticationRequiredError(),401],[new c.UploadError('IDEMPOTENCY_CONFLICT'),409],[new Error('CANARY-private-response'),500]]){
     const response=http.uploadFailure(error);assert.equal(response.status,status);assert.match(response.headers.get('cache-control'),/private, no-store/);assert.ok(!JSON.stringify(await response.json()).includes('CANARY'));
   }
+});
+
+// The RPC returns PT409 once; the API preserves its existing domain error and HTTP status.
+test('PT409 stale attempt fails once without fail/retry; legacy 40001 remains compatible',async()=>{
+  for(const finishCode of ['PT409','40001']){
+    const h=serviceHarness({finishError:true,finishCode});
+    await assert.rejects(h.service.completeUpload(id,{pages:[{page:1,text:'fixture',provider:'tesseract.js',providerVersion:'7.0.0',execution:'client',language:'kor+eng',confidence:null}]}),{code:'STALE_ATTEMPT'});
+    assert.equal(h.calls.filter(v=>v==='finish').length,1);
+    assert.ok(!h.calls.includes('fail'));
+    assert.equal(h.service.uploadErrorStatus('STALE_ATTEMPT'),409);
+  }
+  const unknown=serviceHarness({finishError:true,finishMessage:'OTHER_CONFLICT'});
+  await assert.rejects(unknown.service.completeUpload(id,{pages:[{page:1,text:'fixture',provider:'tesseract.js',providerVersion:'7.0.0',execution:'client',language:'kor+eng',confidence:null}]}),{code:'STORAGE_UNAVAILABLE'});
+});
+
+test('Upload complete HTTP route maps PT409 STALE_ATTEMPT to 409 without storage-unavailable fallback',async()=>{
+  const h=serviceHarness({finishError:true});
+  class AuthenticationRequiredError extends Error {}
+  const http=load('src/lib/uploads/http.ts',{'@/lib/supabase/auth':{AuthenticationRequiredError},'@/lib/uploads/contract':c,'@/lib/uploads/service':h.service});
+  const route=load('src/app/api/v1/uploads/[uploadId]/complete/route.ts',{'@/lib/uploads/contract':c,'@/lib/uploads/http':http,'@/lib/uploads/service':h.service});
+  const input={pages:[{page:1,text:'fixture',provider:'tesseract.js',providerVersion:'7.0.0',execution:'client',language:'kor+eng',confidence:null}]};
+  const response=await route.POST(new Request('http://localhost/api/v1/uploads/'+id+'/complete',{method:'POST',headers:{origin:'http://localhost','Content-Type':'application/json'},body:JSON.stringify(input)}),{params:Promise.resolve({uploadId:id})});
+  assert.equal(response.status,409);assert.equal((await response.json()).error.code,'STALE_ATTEMPT');
+  assert.equal(h.calls.filter(v=>v==='finish').length,1);assert.ok(!h.calls.includes('fail'));
 });

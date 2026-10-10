@@ -54,3 +54,14 @@ OCR 엔진 병렬 Worker는 만들지 않는다.
 브라우저 OCR은 untrusted client input이다. providerVersion/confidence는 참고 보고값이고 engine 실행 증명이 아니다.
 검색/AI/Evidence 정확성에 원본과의 불일치 위험이 남으며 원문 highlight는 후속 TODO.
 production에서 필요 시 Cloud Vision/Gemini 등 managed provider를 별도 승인으로 추가할 수 있다.
+
+## 2026-10-10 CPU 긴급 수정
+
+`20261010011615_upload_stale_attempt_nonretryable.sql`은 지정한 `ai-hub-dev`에 적용됐다.
+Upload RPC의 stale attempt 오류 8곳만 `40001`에서 `PT409`로 변경한다. 함수 계약·권한·테이블·RLS·기존 데이터는 보존한다.
+`node scripts/apply-upload-cpu-dev.mjs`는 사전 점검이며 `--apply`에서만 적용한다.
+두 실행 모드 모두 `CALENDAR_DB_TEST_PROJECT`와 `UPLOAD_DB_TEST_PROJECT`를 `oclzdppdiljbojvqtkeu`로 지정해야 한다.
+`node scripts/test-upload-cpu-live.mjs`는 `UPLOAD_DB_TEST_PROJECT`의 명시적 dev opt-in이 필요하다.
+합성 계정/Storage 자료만 만들고 실제 Tesseract OCR 및 Gemini 분석 후 해당 자료를 정리한다.
+Node OCR/실제 인증 주체 서비스 어댑터 검증이며 브라우저 UI·쿠키 E2E 검증으로 확대하지 않는다.
+전체 감사·검증 결과와 공유 DB 영향은 [CPU 수정 보고서](SUPABASE_CPU_FIX_20261010.md)에 기록한다.
