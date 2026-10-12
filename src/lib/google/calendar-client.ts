@@ -26,15 +26,19 @@ export async function createCalendarClient(userId: string, connectionId: string)
   async function get(url: URL, signal: AbortSignal) {
     signal.throwIfAborted();
     if (!saved) throw new CalendarError("CONNECTION_REQUIRED");
-    if (!Number.isFinite(Date.parse(saved.expiresAt)) || Date.parse(saved.expiresAt) <= Date.now() + 60_000) {
+    async function refresh() {
       try {
-        const next = await refreshGoogleAccessToken(saved.refreshToken, saved.scopes, true);
+        const next = await refreshGoogleAccessToken(saved!.refreshToken, saved!.scopes, false);
         signal.throwIfAborted();
-        if (!await refreshGoogleConnectionTokens(userId, connectionId, { ...next, expectedAccessTokenCiphertext: saved.accessTokenCiphertext })) throw new Error();
+        if (!await refreshGoogleConnectionTokens(userId, connectionId, { ...next, expectedAccessTokenCiphertext: saved!.accessTokenCiphertext })) throw new Error();
         saved = await getGoogleConnectionTokens(userId, connectionId);
         if (!saved || saved.accessToken !== next.accessToken || !saved.scopes.includes(CALENDAR_SCOPE)) throw new Error();
       } catch { throw new CalendarError("REFRESH_FAILED"); }
     }
+    if (!Number.isFinite(Date.parse(saved.expiresAt)) || Date.parse(saved.expiresAt) <= Date.now() + 60_000) {
+      await refresh();
+    }
+    let authRetried = false;
     for (let attempt = 0; ; attempt++) {
       const connection = await getGoogleOAuthConnection(userId);
       if (!connection || connection.id !== connectionId || connection.status !== "connected") throw new CalendarError("CONNECTION_REQUIRED");
@@ -44,6 +48,16 @@ export async function createCalendarClient(userId: string, connectionId: string)
       try {
         const response = await fetch(url, { headers: { Authorization: `Bearer ${saved!.accessToken}`, Accept: "application/json" },
           cache: "no-store", redirect: "error", signal: requestSignal });
+        if (response.status === 401 && !authRetried) {
+          authRetried = true;
+          if (!response.bodyUsed) await response.body?.cancel();
+          await refresh();
+          continue;
+        }
+        if (response.status === 401) {
+          if (!response.bodyUsed) await response.body?.cancel();
+          throw new CalendarError("ACCESS_UNAVAILABLE");
+        }
         // Parse only to classify an allowlisted reason; never surface raw provider errors.
         let rateLimited = response.status === 429;
         if (response.status === 403) {

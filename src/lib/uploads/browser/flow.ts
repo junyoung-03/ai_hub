@@ -9,14 +9,16 @@ async function api(path:string,body:unknown,signal:AbortSignal,key?:string){
 export async function runUpload({file,checkpoint,signal,onCheckpoint,onPhase,onProgress,providerFactory}:{file?:File;checkpoint:UploadCheckpoint;signal:AbortSignal;onCheckpoint:(value:UploadCheckpoint)=>void;onPhase:(phase:UploadPhase)=>void;onProgress:(value:OCRProgress)=>void;providerFactory?:()=>Promise<OCRProvider>}):Promise<CompletedUpload>{
   let uploadId=checkpoint.uploadId;
   if(!uploadId){
-    if(!file||file.size<1||file.size>5_000_000||!['application/pdf','image/png','image/jpeg'].includes(file.type))throw new Error('UNSUPPORTED_FILE');
+    const isPdf = file?.name?.toLowerCase().endsWith('.pdf') || file?.type === 'application/pdf';
+    const mimeType = isPdf ? 'application/pdf' : (file?.type ?? '');
+    if(!file||file.size<1||file.size>5_000_000||!['application/pdf','image/png','image/jpeg'].includes(mimeType))throw new Error('UNSUPPORTED_FILE');
     onPhase('uploading');
-    const created=await api('/api/v1/uploads',{fileName:file.name,mimeType:file.type,size:file.size},signal,checkpoint.idempotencyKey);
+    const created=await api('/api/v1/uploads',{fileName:file.name,mimeType,size:file.size},signal,checkpoint.idempotencyKey);
     uploadId=created.uploadId;
     if(!created.itemId){
       const {createClient}=await import('@/lib/supabase/client');
       const parsed=new URL(created.signedUploadUrl),token=parsed.searchParams.get('token');if(!token)throw new Error('UPLOAD_FAILED');
-      const {error}=await createClient().storage.from('upload-originals').uploadToSignedUrl(created.storagePath,token,file,{contentType:file.type,upsert:false});
+      const {error}=await createClient().storage.from('upload-originals').uploadToSignedUrl(created.storagePath,token,file,{contentType:mimeType,upsert:false});
       if(error)throw new Error('STORAGE_UNAVAILABLE');
     }
     // Only checkpoint after Storage succeeds; key is retained for safe create replay.

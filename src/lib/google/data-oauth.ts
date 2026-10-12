@@ -246,8 +246,18 @@ export async function refreshGoogleAccessToken(refreshToken: string, requiredSco
       || typeof payload.token_type !== "string" || payload.token_type.toLowerCase() !== "bearer") {
       throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");
     }
-    if (requireScopeResponse && typeof payload.scope !== "string") throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");
-    const scopes = typeof payload.scope === "string" ? validateGrantedScopes(payload.scope, "connect", requiredScopes) : null;
+    if (requireScopeResponse && (typeof payload.scope !== "string" || !payload.scope.trim())) {
+      throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");
+    }
+    let scopes: string[];
+    if (typeof payload.scope === "string" && payload.scope.trim()) {
+      scopes = validateGrantedScopes(payload.scope, "connect", requiredScopes);
+    } else {
+      if (!requiredScopes.includes(GMAIL_READONLY_SCOPE)) {
+        throw new GoogleDataOAuthError("TOKEN_REFRESH_FAILED");
+      }
+      scopes = [...requiredScopes];
+    }
     return {
       accessToken: payload.access_token.trim(),
       refreshToken: typeof payload.refresh_token === "string" && payload.refresh_token.trim() ? payload.refresh_token.trim() : null,

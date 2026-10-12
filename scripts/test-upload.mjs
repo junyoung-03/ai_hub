@@ -15,7 +15,7 @@ test('upload request allows exactly one declared file; rejects spoof, path, owne
   assert.throws(()=>c.verifyBytes(Buffer.from('MZexe'),request(Buffer.from('MZexe'))));
 });
 test('actual isolated PDF text, scanned and mixed page parsing with mock OCR and code point map',async()=>{
-  for(const kinds of [['text'],['scan'],['text','scan']]){
+  for(const kinds of [['text'],['scan'],['text','scan'],['ambiguous']]){
     const plan=await isolatedInspect(pdfFixture(kinds),'application/pdf');
     assert.deepEqual(plan.pages.map(p=>p.method),kinds.map(k=>k==='scan'?'ocr':'embedded'));
     const result=c.assemble(plan.pages.map(p=>({text:p.text??'Mock OCR 한글 😀',method:p.method,confidence:p.method==='ocr'?0.01:null})));
@@ -36,7 +36,7 @@ test('PNG and JPEG full decoders return one image page; OCR fixture is whole tex
 test('parser blocks oversized, encrypted, corrupt, script, launch, embedded file and ambiguous PDFs',async()=>{
   const cases=[ [Buffer.alloc(5000001),'image/png','FILE_LIMIT'],[pdfFixture(Array(11).fill('text')),'application/pdf','FILE_LIMIT'],
     [pdfFixture(['text'],'/Encrypt 4 0 R'),'application/pdf','PDF_ENCRYPTED'],[Buffer.from('%PDF-1.7 broken'),'application/pdf','INVALID_FILE'],
-    [pdfFixture(['ambiguous']),'application/pdf','PDF_LAYOUT_NEEDS_REVIEW'],[Buffer.from([137,80,78,71,13,10,26,10,0]),'image/png','INVALID_FILE'] ];
+    [Buffer.from([137,80,78,71,13,10,26,10,0]),'image/png','INVALID_FILE'] ];
   for(const name of ['JavaScript','Launch','EmbeddedFile','J#53','GoToR'])cases.push([pdfFixture(['text'],`/${name} null`),'application/pdf','PDF_UNSAFE']);
   for(const [bytes,mime,code] of cases)await assert.rejects(isolatedInspect(bytes,mime),{message:code});
   const large=await imageFixture('png',10001,1);await assert.rejects(isolatedInspect(large,'image/png'),{message:'FILE_LIMIT'});

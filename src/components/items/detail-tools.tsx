@@ -3,13 +3,21 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-export function AnalyzeControl({ itemId, analyzed = false }: { itemId: string; analyzed?: boolean }) {
+export function AnalyzeControl({ itemId, status, analyzed = false }: { itemId: string; status?: string; analyzed?: boolean }) {
   const router = useRouter(); const [busy,setBusy]=useState(false); const [message,setMessage]=useState(""); const [error,setError]=useState(false);
   async function analyze() { setBusy(true); setMessage(""); setError(false); try {
     const response=await fetch(`/api/v1/items/${itemId}/analyze`,{method:"POST",cache:"no-store"});
     if(!response.ok)throw new Error(); setMessage("분석 결과가 저장되었습니다."); router.refresh();
   }catch{setError(true);setMessage("분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");}finally{setBusy(false);} }
-  return <div className="space-y-3"><p className="text-sm text-muted-foreground">분석하면 저장된 본문이 Gemini로 전송됩니다. 원문에 근거한 분류와 할 일을 추출합니다. 사용자 수정은 유지합니다.</p><button disabled={busy} className="btn-secondary" onClick={()=>void analyze()}>{busy?"AI 분석 중…":analyzed?"AI 분석 확인 · 재시도":"AI 분석하기"}</button>{message&&<p role={error?"alert":"status"} className="text-sm">{message}</p>}</div>;
+  const isFailed = status === "failed";
+  const isAnalyzing = busy || status === "analyzing";
+  return <div className="space-y-3">
+    <p className="text-sm text-muted-foreground">분석하면 저장된 본문이 Gemini로 전송됩니다. 원문에 근거한 분류와 할 일을 추출합니다. 사용자 수정은 유지합니다.</p>
+    <button disabled={isAnalyzing} className={isFailed ? "btn-primary" : "btn-secondary"} onClick={()=>void analyze()}>
+      {isAnalyzing ? "AI 분석 중…" : isFailed ? "AI 분석 다시 시도" : analyzed ? "AI 분석 확인 · 재시도" : "AI 분석하기"}
+    </button>
+    {message&&<p role={error?"alert":"status"} className="text-sm">{message}</p>}
+  </div>;
 }
 
 export function OriginalAccess({ itemId }: { itemId: string }) {

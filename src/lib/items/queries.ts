@@ -118,15 +118,26 @@ export async function getItemDetail(itemId: string): Promise<ItemDetailResponse 
     .eq("user_id", user.id).eq("id", itemId).maybeSingle();
   if (itemError) throw new ItemReadError();
   if (!item) return null;
-  const { data: classification, error: classificationError } = await supabase.from("classifications")
-    .select(classificationColumns).eq("user_id", user.id).eq("item_id", itemId).maybeSingle();
-  if (classificationError) throw new ItemReadError();
-  const itemSources = await readRelatedPages((after) => {
-    let query = supabase.from("action_sources").select("id,action_id")
-      .eq("user_id", user.id).eq("item_id", itemId).order("id", { ascending: true }).limit(relatedPageSize);
-    if (after) query = query.gt("id", after);
-    return query;
-  });
+  const [classificationResult, initialItemSources] = await Promise.all([
+    supabase.from("classifications")
+      .select(classificationColumns)
+      .eq("user_id", user.id).eq("item_id", itemId).maybeSingle(),
+    supabase.from("action_sources")
+      .select("id,action_id")
+      .eq("user_id", user.id).eq("item_id", itemId).order("id", { ascending: true }).limit(relatedPageSize),
+  ]);
+  if (classificationResult.error || initialItemSources.error) throw new ItemReadError();
+  const classification = classificationResult.data;
+  let itemSources = initialItemSources.data ?? [];
+  if (itemSources.length >= relatedPageSize) {
+    const additionalSources = await readRelatedPages((after) => {
+      let query = supabase.from("action_sources").select("id,action_id")
+        .eq("user_id", user.id).eq("item_id", itemId).order("id", { ascending: true }).limit(relatedPageSize);
+      if (after) query = query.gt("id", after);
+      return query;
+    });
+    itemSources = additionalSources;
+  }
   const ids = [...new Set(itemSources.map((source) => source.action_id))];
   const actions: Action[] = [];
   const evidence: Evidence[] = [];

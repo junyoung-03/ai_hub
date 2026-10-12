@@ -77,8 +77,9 @@ function scanPdf(bytes){
   const offset=Number(tail[1]);if(!Number.isSafeInteger(offset)||offset<0||offset>=bytes.length)fail('INVALID_FILE');
   const xref=raw.slice(offset);
   if(!xref.startsWith('xref')) {
-    if(/^\d+\s+\d+\s+obj\b[\s\S]{0,300}?\/Type\s*\/XRef\b/.test(xref))fail('PDF_LAYOUT_NEEDS_REVIEW');
-    fail('INVALID_FILE');
+    if(!/^\d+\s+\d+\s+obj\b[\s\S]{0,300}?\/Type\s*\/XRef\b/.test(xref)) {
+      fail('INVALID_FILE');
+    }
   }
   if(xref.startsWith('xref')) {
     let entries=xref.slice(4).trimStart();
@@ -90,7 +91,7 @@ function scanPdf(bytes){
     }
   }
   const decodedNames=s=>s.replace(/#([a-f0-9]{2})/gi,(_,hex)=>String.fromCharCode(parseInt(hex,16)));
-  const reject=s=>{s=decodedNames(s);if(/\/Encrypt\b/.test(s))fail('PDF_ENCRYPTED');if(/\/(JavaScript|JS|Launch|EmbeddedFile|Filespec|OpenAction|AA|XFA|RichMedia|SubmitForm|GoToR|Prev|XRefStm)\b/.test(s))fail('PDF_UNSAFE');
+  const reject=s=>{s=decodedNames(s);if(/\/Encrypt\b/.test(s))fail('PDF_ENCRYPTED');if(/\/(JavaScript|JS|Launch|EmbeddedFile|Filespec|OpenAction|AA|XFA|RichMedia|SubmitForm|GoToR|Prev)\b/.test(s))fail('PDF_UNSAFE');
     let checked=0;
     for(const match of s.matchAll(/<<[^<>]*\/Subtype\s*\/Image\b[^<>]*>>/g)) {
       checked++;
@@ -146,18 +147,8 @@ export async function inspectBytes(bytes,mime){
       if(characters>limits.text||Buffer.byteLength(text)>400000)fail('TEXT_LIMIT');
       if(text.includes('\ufffd')||/[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text))fail('PDF_LAYOUT_NEEDS_REVIEW');
       const ops=await page.getOperatorList();const images=ops.fnArray.filter(op=>[OPS.paintImageXObject,OPS.paintInlineImageXObject,OPS.paintImageXObjectRepeat].includes(op)).length;
-      // Text plus a raster on the same page has no reliable coverage contract yet.
-      if(text&&images)fail('PDF_LAYOUT_NEEDS_REVIEW');
-      const lines=new Map();
-      for(const item of data.items) if('str' in item&&item.str.trim()) {
-        const y=Math.round(item.transform[5]*10)/10,x=item.transform[4];
-        if(lines.has(y)&&x+1<lines.get(y))fail('PDF_LAYOUT_NEEDS_REVIEW');
-        lines.set(y,x);
-      }
-      if(text||!images)pages.push({page:n,method:'embedded',text});
-      else {
-        pages.push({page:n,method:'ocr'});
-      }
+      if(text.trim()||!images)pages.push({page:n,method:'embedded',text});
+      else pages.push({page:n,method:'ocr'});
       page.cleanup();
     }
     return {rawHash,mime,pages};

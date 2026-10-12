@@ -47,7 +47,7 @@ export async function createDriveClient(userId: string, connectionId: string) {
     if (!refreshing) refreshing = (async () => {
       try {
         if (!saved) throw new Error();
-        const next = await refreshGoogleAccessToken(saved.refreshToken, saved.scopes, true);
+        const next = await refreshGoogleAccessToken(saved.refreshToken, saved.scopes, false);
         if (!await refreshGoogleConnectionTokens(userId, connectionId, { ...next, expectedAccessTokenCiphertext: saved.accessTokenCiphertext })) throw new Error();
         const stored = await getGoogleConnectionTokens(userId, connectionId);
         if (!stored || stored.accessToken !== next.accessToken) throw new Error();
@@ -60,7 +60,7 @@ export async function createDriveClient(userId: string, connectionId: string) {
     if (!saved) throw new DriveError("CONNECTION_REQUIRED");
     signal.throwIfAborted();
     if (Date.parse(saved.expiresAt) <= Date.now() + 60_000 || !Number.isFinite(Date.parse(saved.expiresAt))) await refresh();
-    let retry = 0;
+    let retry = 0, authRetried = false;
     for (;;) {
       const current = await getGoogleOAuthConnection(userId);
       if (!current || current.id !== connectionId || current.status !== "connected") throw new DriveError("CONNECTION_REQUIRED");
@@ -71,6 +71,13 @@ export async function createDriveClient(userId: string, connectionId: string) {
         const sentToken = saved!.accessToken;
         const response = await fetch(url, { headers: { Authorization: `Bearer ${sentToken}`, Accept: "application/json" },
           cache: "no-store", redirect: "error", signal: requestSignal });
+        if (response.status === 401 && !authRetried) {
+          authRetried = true;
+          await response.body?.cancel();
+          await refresh();
+          continue;
+        }
+        if (response.status === 401) { await response.body?.cancel(); throw new DriveError("ACCESS_UNAVAILABLE"); }
         if ((response.status === 429 || response.status >= 500) && retry++ === 0) {
           // Do not keep a request alive for an unbounded provider Retry-After.
           const raw = response.headers.get("retry-after");

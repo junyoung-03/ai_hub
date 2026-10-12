@@ -34,7 +34,7 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
 
   const insightPane = <aside className="min-w-0 space-y-5 rounded-xl border border-line bg-surface p-5 lg:sticky lg:top-20" aria-labelledby="analysis-title">
     {await promotionalReady() && <NoiseControls itemId={item.id}/>}
-    <div><p className="mb-1 text-xs font-medium tracking-[0.08em] text-faint">AI INSIGHT</p><h2 id="analysis-title">분석과 할 일</h2>{data.aiAnalysis ? <p className="meta mt-2">분석 완료 · {formatTimestamp(data.aiAnalysis.analyzedAt)}</p> : <p role="status" className="mt-2 text-sm text-muted-foreground">검증된 AI 분석 결과가 아직 없습니다.</p>}</div>
+    <div><p className="mb-1 text-xs font-medium tracking-[0.08em] text-faint">AI INSIGHT</p><h2 id="analysis-title">분석과 할 일</h2>{data.aiAnalysis ? <p className="meta mt-2">분석 완료 · {formatTimestamp(data.aiAnalysis.analyzedAt)}</p> : item.processingStatus === "analyzing" ? <p role="status" className="mt-2 text-sm text-primary">AI 분석 중…</p> : item.processingStatus === "failed" ? <p role="alert" className="mt-2 text-sm text-destructive">AI 분석에 실패했습니다.</p> : <p role="status" className="mt-2 text-sm text-muted-foreground">검증된 AI 분석 결과가 아직 없습니다.</p>}</div>
     <section className="insight-section" aria-labelledby="actions-title"><h3 id="actions-title">해야 할 일 <span className="text-sm font-normal text-muted-foreground">{actions.length}개</span></h3>
       {!actions.length && <p className="text-muted-foreground">원문에서 확인된 할 일이 없습니다.</p>}
       {actions.map(action => <article key={action.id} className="space-y-3 border-t pt-5 first-of-type:border-0 first-of-type:pt-0">
@@ -51,7 +51,7 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
     </section>
     {data.eventObservations.length > 0 && <section className="insight-section"><h3>일정 관찰 · 마감일 아님</h3>{data.eventObservations.map((event, i) => <div key={i} className="space-y-2"><p>{event.status === "confirmed" ? event.datetime ? formatTimestamp(event.datetime) : event.date : "일정 날짜 확인 필요"}</p><blockquote className="border-l-2 pl-3 text-sm">{event.evidence.text}</blockquote>{locatorLabels(event.evidence.locator).map(value => <p className="meta" key={value}>{value}</p>)}</div>)}</section>}
     <section className="insight-section"><h3>분류</h3><ClassificationSummary value={classification} detailed /><ClassificationEditor itemId={item.id} value={classification} /></section><SimilarItems itemId={item.id} />
-    {eligible && <details className="border-t pt-5"><summary className="cursor-pointer text-sm text-muted-foreground">AI 분석 관리</summary><div className="mt-4"><AnalyzeControl itemId={item.id} analyzed={Boolean(data.aiAnalysis)} /></div></details>}
+    {eligible && <div className="border-t pt-5"><h3 className="mb-2 text-sm font-medium text-muted-foreground">AI 분석 관리</h3><AnalyzeControl itemId={item.id} status={item.processingStatus} analyzed={Boolean(data.aiAnalysis)} /></div>}
   </aside>;
   return <AppShell title={item.title}><Link href="/library" className="text-sm text-primary">← 자료로 돌아가기</Link><div className="mt-4"><ItemMetadata item={item} /></div><DetailLayout original={originalPane} insight={insightPane} /></AppShell>;
 }

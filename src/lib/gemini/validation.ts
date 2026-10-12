@@ -21,8 +21,32 @@ const actionIntent = /해야|하십시오|하세요|해\s?주세요|바랍니다
 const deadlineIntent = /마감|기한|까지|내에|deadline|due\b|by\b|until\b|no later than/i;
 const startIntent = /신청|접수|등록|제출|apply|application|registration|submission/i;
 
+export function normalizeWhitespace(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(/[\t\v\f\r \u00a0\u2000-\u200b]+/g, " ").trim();
+}
+
+export function findNormalizedSpan(source: string, target: string): { start: number; end: number; exact: string } | null {
+  const normTarget = normalizeWhitespace(target);
+  if (!normTarget) return null;
+  const escaped = normTarget.split(" ").map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s\\u00a0\\u2000-\\u200b]+");
+  try {
+    const re = new RegExp(escaped, "u");
+    const m = re.exec(source);
+    if (!m) return null;
+    return { start: m.index, end: m.index + m[0].length, exact: m[0] };
+  } catch {
+    return null;
+  }
+}
+
 function evidence(source: string, value: AnalysisEvidence) {
-  const index = source.indexOf(value.text);
+  let index = source.indexOf(value.text);
+  if (index < 0) {
+    const found = findNormalizedSpan(source, value.text);
+    if (!found) throw new AnalysisValidationError("EVIDENCE");
+    value.text = found.exact;
+    index = found.start;
+  }
   if (!value.text.trim() || index < 0) throw new AnalysisValidationError("EVIDENCE");
   const chars = Array.from(source);
   const locator = value.locator;
@@ -49,7 +73,10 @@ function observation(source: string, value: DateObservation, role: "start" | "de
   }
   if (!value.rawText?.trim() || !value.evidence) throw new AnalysisValidationError("DATE_EVIDENCE");
   evidence(source, value.evidence);
-  if (!value.evidence.text.includes(value.rawText)) throw new AnalysisValidationError("DATE_EVIDENCE");
+  if (!value.evidence.text.includes(value.rawText)) {
+    const normEv = normalizeWhitespace(value.evidence.text), normRaw = normalizeWhitespace(value.rawText);
+    if (!normRaw || !normEv.includes(normRaw)) throw new AnalysisValidationError("DATE_EVIDENCE");
+  }
   if (value.status === "needs_review") {
     if (value.date !== null || value.datetime !== null) throw new AnalysisValidationError("DATE_INFERENCE");
     const resolved = resolveYearlessDate(value.rawText, value.evidence.text, context);
@@ -82,8 +109,23 @@ export function validateAnalysis(input: unknown, source: string, context?: Analy
     if (!action.title || !actionIntent.test(action.title)) throw new AnalysisValidationError("ACTION_TITLE_INTENT");
     action.evidence.forEach((quote) => evidence(source, quote));
     if (!action.evidence.some((quote) => actionIntent.test(quote.text))) throw new AnalysisValidationError("ACTION_EVIDENCE_INTENT");
-    for (const text of [...action.requirements, ...action.conditions]) {
-      if (!text.trim() || !source.includes(text)) throw new AnalysisValidationError("REQUIREMENTS");
+    for (let i = 0; i < action.requirements.length; i++) {
+      const text = action.requirements[i];
+      if (!text.trim()) throw new AnalysisValidationError("REQUIREMENTS");
+      if (!source.includes(text)) {
+        const found = findNormalizedSpan(source, text);
+        if (!found) throw new AnalysisValidationError("REQUIREMENTS");
+        action.requirements[i] = found.exact;
+      }
+    }
+    for (let i = 0; i < action.conditions.length; i++) {
+      const text = action.conditions[i];
+      if (!text.trim()) throw new AnalysisValidationError("REQUIREMENTS");
+      if (!source.includes(text)) {
+        const found = findNormalizedSpan(source, text);
+        if (!found) throw new AnalysisValidationError("REQUIREMENTS");
+        action.conditions[i] = found.exact;
+      }
     }
     observation(source, action.startObservation, "start", context);
     observation(source, action.deadlineObservation, "deadline", context);

@@ -50,8 +50,8 @@ export function parseEvent(raw: unknown, calendarTimezone: string, htmlToText: (
   if (!["confirmed", "tentative", "cancelled"].includes(String(v.status))) throw new CalendarError("INVALID_EVENT");
   const cancelled = v.status === "cancelled", start = calendarDate(v.start), end = calendarDate(v.end);
   if (!cancelled && (!start || !end || (("date" in start) !== ("date" in end))
-    || ("date" in start && "date" in end ? end.date <= start.date
-      : "dateTime" in start && "dateTime" in end && Date.parse(end.dateTime) <= Date.parse(start.dateTime))))
+    || ("date" in start && "date" in end ? end.date < start.date
+      : "dateTime" in start && "dateTime" in end && Date.parse(end.dateTime) < Date.parse(start.dateTime))))
     throw new CalendarError("INVALID_EVENT");
   const original = v.originalStartTime === undefined ? null : calendarDate(v.originalStartTime);
   if ((v.recurringEventId !== undefined && (!isEventId(v.recurringEventId) || !original))

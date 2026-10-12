@@ -59,27 +59,30 @@ export async function analyzeGmailText(contentText: string, topics: string[], da
     .replace(/Noise verdict[\s\S]*?Never output description/, "Never output description")
     .replace("user overrides, identifiers or visibility", "user overrides or identifiers");
   let response: Response | undefined;
-  const endsAt = Date.now() + 120_000;
-  // Initial request + at most two retries. No retry of validation failures.
+  const endsAt = Date.now() + 80_000;
+  // Initial request + at most two retries for 429 and 5xx transient faults. No retry of validation failures.
   for (let attempt = 0; attempt < 3; attempt++) {
     const remaining = endsAt - Date.now();
     if (remaining <= 0) throw new GeminiAnalysisError("GEMINI_UNAVAILABLE");
+    const requestTimeout = Math.min(remaining, 35_000);
     try {
       response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: "POST", cache: "no-store", signal: AbortSignal.timeout(remaining),
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: prompt }] },
-        contents: [{ role: "user", parts: [{ text: JSON.stringify({ existingTopics: topics, content_text: contentText, ...(dateContext ? { dateContext } : {}) }) }] }],
-        generationConfig: { maxOutputTokens: 16_384,
-          responseFormat: { text: { mimeType: "APPLICATION_JSON", schema: generationSchema(schemaVersion === "0.3" ? analysisSchema : legacySchema) } } } }),
-    });
+        method: "POST", cache: "no-store", signal: AbortSignal.timeout(requestTimeout),
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: prompt }] },
+          contents: [{ role: "user", parts: [{ text: JSON.stringify({ existingTopics: topics, content_text: contentText, ...(dateContext ? { dateContext } : {}) }) }] }],
+          generationConfig: { maxOutputTokens: 16_384,
+            responseFormat: { text: { mimeType: "APPLICATION_JSON", schema: generationSchema(schemaVersion === "0.3" ? analysisSchema : legacySchema) } } } }),
+      });
     } catch { throw new GeminiAnalysisError("GEMINI_UNAVAILABLE"); }
     if (response.ok) break;
-    if (![429, 503].includes(response.status) || attempt === 2) throw new GeminiAnalysisError("GEMINI_UNAVAILABLE", response.status);
+    const retryable = [429, 500, 502, 503, 504].includes(response.status);
+    if (!retryable || attempt === 2) throw new GeminiAnalysisError("GEMINI_UNAVAILABLE", response.status);
     const retryAfter = response.headers.get("retry-after");
     const advised = retryAfter === null ? 0 : /^\d+$/.test(retryAfter)
       ? Number(retryAfter) * 1000 : Math.max(0, Date.parse(retryAfter) - Date.now());
-    const wait = Math.max(2_000 * 2 ** attempt, Number.isFinite(advised) ? advised : 0);
+    const jitter = Math.floor(Math.random() * 400);
+    const wait = Math.max(1_500 * (2 ** attempt) + jitter, Number.isFinite(advised) ? advised : 0);
     // Do not ignore a long provider cooldown or hold a request indefinitely.
     if (wait > 10_000 || Date.now() + wait >= endsAt) throw new GeminiAnalysisError("GEMINI_UNAVAILABLE", response.status);
     await response.body?.cancel();
