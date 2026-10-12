@@ -1,7 +1,74 @@
+.demo {
+  /* Shared app typography; keep the public landing page's scale independent. */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.5;
+  --color-slate-300: #64748b;
+  --color-slate-400: #5b6b80;
+  --color-slate-500: #475569;
+  --color-slate-600: #334155;
+  --muted-foreground: #526175;
+  --color-faint: #526175;
+  color: #1e293b;
+}
+
+.demo :where([class~="text-[9px]"], [class~="text-[10px]"], [class~="text-[11px]"]) {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.demo :where([class~="text-[13px]"]) {
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.demo :where([class~="text-[14px]"]) {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.demo :where(h1, h2, h3) {
+  font-weight: 600;
+}
+
+.demo :where(label, summary, thead) {
+  font-weight: 500;
+}
+
+.demo :where(input, textarea)::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+.demo :where(
+  [class~="text-[#6d88b0]"], [class~="text-[#7894bd]"],
+  [class~="text-[#5f7fae]"], [class~="text-[#6484b3]"],
+  [class~="text-[#6e86b0]"], [class~="text-[#587fb5]"],
+  [class~="text-[#6c8cb9]"], [class~="text-[#5676b1]"],
+  [class~="text-[#557bb9]"], [class~="text-[#527cbd]"],
+  [class~="text-[#6688ba]"]
+) {
+  color: #3c6193;
+}
+
+.demo :where([class~="text-[#cc5353]"]) { color: #ad3535; }
+.demo :where([class~="text-[#4b8b73]"]) { color: #326c55; }
+.demo :where([class~="text-[#8b72a7]"]) { color: #71538d; }
+.demo :where([class~="text-[#bf6746]"], [class~="text-orange-600"]) { color: #a74324; }
+.demo :where([class~="text-emerald-600"]) { color: #047857; }
+.demo :where([class~="text-red-500"]) { color: #c83535; }
+.demo :where([class~="bg-[#7894bd]"]) { background-color: #4f72a3; }
+
+.demo main :where(a[aria-current="page"], button[aria-pressed="true"]) {
+  font-weight: 600;
+}
+
 .demo aside nav a[aria-current="page"],
 .demo > div:last-child nav a[aria-current="page"] {
-  background: #eaf0fa;
-  color: #5f7fae;
+  background: #e3ecfa;
+  color: #355986;
+  font-weight: 600;
 }
 .demo > header {
   background: rgb(255 255 255 / 90%);
@@ -11,5 +78,5 @@
   background: #f5f7fb;
 }
 .demo > header input::placeholder {
-  color: #94a3b8;
+  color: #64748b;
 }
