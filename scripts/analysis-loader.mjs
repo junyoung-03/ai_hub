@@ -14,6 +14,7 @@ export function loadAnalysisModule(path, imports = {}, globals = {}) {
       if (name === "server-only") return {};
       if (name in imports) return imports[name];
       if (name === "@/lib/items/analysis-policy") return loadAnalysisModule("src/lib/items/analysis-policy.ts");
+      if (name === "@/lib/gemini/date-context") return loadAnalysisModule("src/lib/gemini/date-context.ts");
       if (name.endsWith("AI_OUTPUT_SCHEMA.json")) return require("../AI_OUTPUT_SCHEMA.json");
       if (name.startsWith("node:") || ["ajv", "ajv-formats", "@supabase/supabase-js"].includes(name)) return require(name);
       throw new Error("Unexpected analysis test dependency.");

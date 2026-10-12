@@ -4,8 +4,19 @@ import type { SearchActionResult } from "@/types/search-ui";
 export type ScheduleEvent = {
   id: string; itemId: string; title: string; source: string;
   kind: "calendar" | "observation"; date: string; lastDate: string;
-  time: string | null; evidence: string; tentative: boolean;
+  time: string | null; evidence: string; tentative: boolean; inferredYear?: boolean;
 };
+export type UnresolvedScheduleEvent = {
+  id: string; itemId: string; title: string; source: string; rawText: string; evidence: string;
+};
+
+/** Undated observations remain visible without assigning a calendar day. */
+export function unresolvedEventsFromDetail(detail: ItemDetailResponse): UnresolvedScheduleEvent[] {
+  return detail.eventObservations.flatMap((event, index) => event.status === "needs_review" ? [{
+    id: `observation:${detail.item.id}:${index}`, itemId: detail.item.id, title: detail.item.title,
+    source: detail.item.source, rawText: event.rawText, evidence: event.evidence.text,
+  }] : []);
+}
 export const dayInSeoul = (value: number | string) => {
   const time = typeof value === "string" ? Date.parse(value) : value;
   return Number.isFinite(time) ? new Date(time + 9 * 3600000).toISOString().slice(0, 10) : "";
@@ -65,7 +76,7 @@ export function eventsFromDetail(detail: ItemDetailResponse): ScheduleEvent[] {
     // Preserve independent observations; never create or merge an Action from a date.
     events.push({ id: `observation:${item.id}:${index}`, itemId: item.id, title: item.title, source: item.source,
       kind: "observation", date, lastDate: date, time: event.datetime,
-      evidence: event.evidence.text, tentative: false });
+      evidence: event.evidence.text, tentative: false, inferredYear: !/\d{4}/.test(event.evidence.text) });
   }
   return events;
 }

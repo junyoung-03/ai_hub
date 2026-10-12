@@ -3,6 +3,7 @@ import { analysisEligible, analysisFingerprint } from "@/lib/items/analysis-poli
 export { analysisFingerprint } from "@/lib/items/analysis-policy";
 import { analyzeGmailText, getGeminiConfig, GeminiAnalysisError } from "@/lib/gemini/client";
 import { AnalysisValidationError, validateAnalysis } from "@/lib/gemini/validation";
+import { analysisDateContext, type AnalysisDateContext } from "@/lib/gemini/date-context";
 import { isItemId } from "@/lib/items/filters";
 import { requireUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -16,11 +17,11 @@ export class ItemAnalysisError extends Error {
 type RecordValue = { [key: string]: Json | undefined };
 const record = (value: Json | undefined): RecordValue | null => value && typeof value === "object" && !Array.isArray(value) ? value : null;
 type PersistenceInput = { userId: string; itemId: string; contentText: string;
-  contentHash: string | null; result: ItemAnalysis; model: string; fingerprint: string; eligibleSource?: boolean };
+  contentHash: string | null; result: ItemAnalysis; model: string; fingerprint: string; eligibleSource?: boolean; dateContext?: AnalysisDateContext };
 
 /** Entire RPC is the retry unit. Never retry only an Action/Evidence statement. */
 export async function persistValidatedAnalysis(admin: ReturnType<typeof createAdminClient>, input: PersistenceInput) {
-  const result = validateAnalysis(input.result, input.contentText);
+  const result = validateAnalysis(input.result, input.contentText, input.dateContext);
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data, error } = await admin.rpc(input.eligibleSource ? "persist_eligible_item_analysis" : "persist_gmail_item_analysis", {
       p_user_id: input.userId, p_item_id: input.itemId, p_content_text: input.contentText,
@@ -49,7 +50,7 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (!isItemId(itemId)) throw new ItemAnalysisError("ITEM_NOT_FOUND");
   const supabase = await createClient();
   const { data: item, error } = await supabase.from("items")
-    .select("id,source,format,content_text,content_hash,metadata,processing_status,updated_at")
+    .select("id,source,format,content_text,content_hash,metadata,processing_status,updated_at,created_at,source_created_at")
     .eq("id", itemId).eq("user_id", user.id).maybeSingle();
   if (error) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
   if (!item) throw new ItemAnalysisError("ITEM_NOT_FOUND");
@@ -57,11 +58,21 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (!analysisEligible(item)) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   if (!item.content_text?.trim() || item.content_text.length > 200_000) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   const { model } = getGeminiConfig();
+  const dateContext = analysisDateContext(item);
   const fingerprint = analysisFingerprint(item.content_text, model);
   const artifact = record(record(item.metadata)?.aiAnalysis);
+  let resolvedCached: ItemAnalysis | undefined;
   if (artifact?.inputFingerprint === fingerprint && artifact?.model === model && artifact?.schemaVersion === "0.2") {
-    const cached = validateAnalysis(artifact.result, item.content_text);
-    return { cached: true, action_count: cached.actions.length, created_count: 0, reused_count: cached.actions.length, processing_status: item.processing_status };
+    const cached = validateAnalysis(artifact.result, item.content_text, dateContext);
+    const previous = artifact.result as unknown as ItemAnalysis;
+    const observed = [...cached.eventObservations, ...cached.actions.flatMap(action => [action.startObservation, action.deadlineObservation])];
+    const prior = [...previous.eventObservations, ...previous.actions.flatMap(action => [action.startObservation, action.deadlineObservation])];
+    const dateChanged = observed.some((value, index) => value.status !== prior[index].status || value.date !== prior[index].date || value.datetime !== prior[index].datetime);
+    if (!dateChanged) {
+      return { cached: true, action_count: cached.actions.length, created_count: 0, reused_count: cached.actions.length, processing_status: item.processing_status };
+    }
+    // Explicit analysis request can persist the newly approved year interpretation without a provider call.
+    resolvedCached = cached;
   }
   if (!["queued", "failed", "indexing", "completed"].includes(item.processing_status)) throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
   const { data: topics, error: topicError } = await supabase.from("classifications")
@@ -77,9 +88,9 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (claimError) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
   if (!claim) throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
   try {
-    const result = await analyzeGmailText(item.content_text, existingTopics);
+    const result = resolvedCached ?? await analyzeGmailText(item.content_text, existingTopics, dateContext);
     return await persistValidatedAnalysis(admin, { userId: user.id, itemId, contentText: item.content_text,
-      contentHash: item.content_hash, result, model, fingerprint, eligibleSource: item.source !== "gmail" });
+      contentHash: item.content_hash, result, model, fingerprint, eligibleSource: item.source !== "gmail", dateContext });
   } catch (failure) {
     const safeError = failure instanceof AnalysisValidationError ? "ANALYSIS_VALIDATION_FAILED"
       : failure instanceof GeminiAnalysisError ? failure.code : "ANALYSIS_FAILED";

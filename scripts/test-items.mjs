@@ -20,6 +20,7 @@ function load(path, dependencies = {}) {
     require(name) {
       if (name === "server-only") return {};
       if (name in dependencies) return dependencies[name];
+      if (name === "@/lib/gemini/date-context") return loadAnalysisModule("src/lib/gemini/date-context.ts");
       if (name === "@/lib/uploads/ocr-contract") return load("src/lib/uploads/ocr-contract.ts");
       if (name === "node:crypto") return crypto;
       if (name === "next/server") return require(name);
@@ -378,6 +379,22 @@ test("v0.2 event-only analysis exposes a safe summary and event Evidence without
     assert.ok(!Object.hasOwn(result.item, "metadata"));
     assert.equal(result.processing.status, "indexing");
   }
+});
+
+test("stored Manual yearless Event is interpreted from its creation date on Detail GET without modifying metadata", async () => {
+  const body = "10월 24일 코딩테스트";
+  const raw = { schemaVersion: "0.2", classification: { primaryTopic: "채용", documentType: "schedule", tags: [] }, actions: [], eventObservations: [{ status: "needs_review", date: null, datetime: null, rawText: "10월 24일", evidence: { text: body, locator: { kind: "unknown", page: null, section: null, startChar: null, endChar: null, field: null } } }] };
+  const metadata = { aiAnalysis: { schemaVersion: "0.2", analyzedAt: time, result: validation.validateAnalysis(raw, body) } };
+  const { queryModule } = queries([
+    { data: { id, title: body, source: "manual", format: "text", processing_status: "indexing", content_text: body, created_at: "2026-10-09T13:27:21Z", metadata } },
+    { data: null }, { data: [] },
+  ]);
+  const detail = await queryModule.getItemDetail(id);
+  assert.equal(detail.eventObservations[0].date, "2026-10-24");
+  assert.equal(detail.actions.length, 0);
+  const schedule = loadAnalysisModule("src/components/actions/schedule-model.ts");
+  assert.equal(schedule.eventOnDay(schedule.eventsFromDetail(detail)[0], "2026-10-24"), true);
+  assert.equal(metadata.aiAnalysis.result.eventObservations[0].date, null);
 });
 
 test("needs_review events remain undated; valid empty analysis is distinguishable from missing analysis", async () => {

@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:isolated",
-    "test:isolated": "node --test scripts/test-auth.mjs scripts/test-items.mjs scripts/test-gmail.mjs scripts/test-google-connections.mjs scripts/test-analysis.mjs scripts/test-drive-oauth.mjs scripts/test-drive.mjs scripts/test-calendar.mjs scripts/test-calendar-oauth.mjs scripts/test-upload.mjs scripts/test-upload-browser.mjs scripts/test-search.mjs scripts/test-search-faults.mjs scripts/test-ui.mjs scripts/test-gap.mjs scripts/test-services-sync.mjs scripts/test-workspace-ui.mjs",
+    "test:isolated": "node --test scripts/test-auth.mjs scripts/test-items.mjs scripts/test-gmail.mjs scripts/test-google-connections.mjs scripts/test-analysis.mjs scripts/test-drive-oauth.mjs scripts/test-drive.mjs scripts/test-calendar.mjs scripts/test-calendar-oauth.mjs scripts/test-upload.mjs scripts/test-upload-browser.mjs scripts/test-search.mjs scripts/test-search-faults.mjs scripts/test-ui.mjs scripts/test-gap.mjs scripts/test-services-sync.mjs scripts/test-workspace-ui.mjs scripts/test-content-ux-calendar.mjs",
     "test:search": "node --test scripts/test-search.mjs scripts/test-search-faults.mjs",
     "test:isolated:search-sql": "node scripts/test-search-sql.mjs",
     "check:supabase": "node scripts/check-supabase.mjs",

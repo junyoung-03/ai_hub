@@ -12,7 +12,7 @@ import { actionDay, dDay, eventOnDay, monthCells, shortDate, type ScheduleEvent 
 type Entry = { kind: "deadline"; action: SearchActionResult } | { kind: "event"; event: ScheduleEvent };
 const entryTitle = (entry: Entry) => entry.kind === "deadline" ? entry.action.title : entry.event.title;
 const entryId = (entry: Entry) => entry.kind === "deadline" ? `deadline:${entry.action.actionId}` : entry.event.id;
-const entryKind = (entry: Entry) => entry.kind === "deadline" ? "마감" : entry.event.kind === "calendar" ? "일정" : "AI가 찾은 일정";
+const entryKind = (entry: Entry) => entry.kind === "deadline" ? "마감" : entry.event.kind === "calendar" ? "Google 일정" : "AI 일정";
 const entryStyle = (entry: Entry) => entry.kind === "deadline" ? "border-transparent bg-[#fff0e9] text-[#bf6746]" : entry.event.kind === "calendar" ? "border-transparent bg-[#eaf1fc] text-[#587fb5]" : "border-[#c4d6f0] bg-white text-[#6688ba]";
 const entryTime = (entry: Entry) => {
   const value = entry.kind === "deadline" ? entry.action.deadlineAt : entry.event.time;
@@ -51,7 +51,7 @@ export function FullMonthCalendar({ month, onMonth, today, actions, events, sele
   return <section aria-label="월간 전체 캘린더" className="min-w-0">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2"><button onClick={() => move(-1)} aria-label="이전 달" className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-white"><ChevronLeft className="size-4"/></button><h2 className="min-w-28 text-center text-sm font-semibold text-slate-800">{month.slice(0, 4)}년 {Number(month.slice(5))}월</h2><button onClick={() => move(1)} aria-label="다음 달" className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-white"><ChevronRight className="size-4"/></button><button onClick={() => { onMonth(today.slice(0, 7)); onSelect(today); }} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white">오늘</button></div>
-      <div aria-label="캘린더 범례" className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500"><span><span className="mr-1 text-[#cb7958]">◆</span>마감 · 이날까지</span><span><span className="mr-1 text-[#638bbf]">●</span>일정 · 이날 열림</span><span><span className="mr-1 text-[#93b2df]">□</span>AI가 찾은 일정</span></div>
+      <div aria-label="캘린더 범례" className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500"><span><span className="mr-1 text-[#cb7958]">◆</span>마감 · 이날까지</span><span><span className="mr-1 text-[#638bbf]">●</span>Google 일정</span><span><span className="mr-1 text-[#93b2df]">□</span>AI 일정 · 자료에서 발견</span></div>
     </div>
     {busy&&<WorkspaceSkeleton rows={1}/>}
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90">
@@ -82,6 +82,7 @@ function CalendarEntryDetail({ entry, today, close }: { entry: Entry; today: str
   return <>
     <div className="mb-4 flex items-start justify-between gap-3"><span className={`rounded-md border px-2 py-1 text-[11px] ${entryStyle(entry)}`}>{entryKind(entry)}</span><button onClick={close} aria-label="항목 상세 닫기" className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-50"><X className="size-4"/></button></div>
     <h3 id="calendar-entry-title" className="break-words text-lg font-semibold text-slate-800">{entryTitle(entry)}</h3>
+    {entry.kind === "event" && entry.event.inferredYear && <p className="mt-2 text-xs text-slate-500">연도는 자료의 기준일과 원문 문맥으로 해석했어요.</p>}
     <p className="mt-2 text-sm text-slate-500">{shortDate(date)}{entry.kind === "event" && entry.event.lastDate !== date ? ` ~ ${shortDate(entry.event.lastDate)}` : ""}{entryTime(entry) ? ` · ${entryTime(entry)}` : ""}{entry.kind === "deadline" ? ` · ${dDay(entry.action, today)}` : entry.event.tentative ? " · 미확정" : ""}</p>
     <div className="mt-4 space-y-3">{sources.map((source, index) => <div key={`${source.itemId}:${index}`} className="rounded-xl bg-[#f7f9fc] p-3"><SourceBadge source={source.source}/>{source.text && <blockquote className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-slate-500">“{source.text}”</blockquote>}<Link href={`/items/${source.itemId}`} className="mt-2 inline-block break-words text-xs text-[#6484b3] hover:underline">자료 보기 · {source.title} ↗</Link></div>)}</div>
     {!sources.length && <p className="mt-4 text-sm text-slate-400">연결된 원문 근거가 없습니다.</p>}

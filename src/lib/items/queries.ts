@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { encodeCursor, filterLiteral, isItemId, type ItemQuery } from "@/lib/items/filters";
 import { effectiveClassification, safeOriginalUrl, safeEvidenceLocator } from "@/lib/items/presentation";
 import { validateAnalysis } from "@/lib/gemini/validation";
+import { analysisDateContext, type AnalysisDateContext } from "@/lib/gemini/date-context";
 import type { Json } from "@/types/database";
 import type { Action, Evidence, EventObservation, ItemDetailResponse } from "@/types/items";
 
@@ -75,7 +76,7 @@ export async function listItems(input: ItemQuery) {
 }
 
 /** Reuses the existing local validator only: no Gemini client, model config or writes. */
-function storedAnalysis(metadata: Json, contentText: string | null): Pick<ItemDetailResponse, "aiAnalysis" | "eventObservations"> {
+function storedAnalysis(metadata: Json, contentText: string | null, context?: AnalysisDateContext): Pick<ItemDetailResponse, "aiAnalysis" | "eventObservations"> {
   const empty = { aiAnalysis: null, eventObservations: [] };
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || contentText === null) return empty;
   const artifact = metadata.aiAnalysis;
@@ -83,7 +84,7 @@ function storedAnalysis(metadata: Json, contentText: string | null): Pick<ItemDe
     || typeof artifact.analyzedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:\d{2})$/.test(artifact.analyzedAt)
     || !Number.isFinite(Date.parse(artifact.analyzedAt))) return empty;
   try {
-    const result = validateAnalysis(artifact.result, contentText);
+    const result = validateAnalysis(artifact.result, contentText, context);
     const eventObservations: EventObservation[] = result.eventObservations.flatMap((event): EventObservation[] => {
       if (!event.rawText || !event.evidence) return [];
       if (event.status === "confirmed" && event.date) return [{ status: "confirmed", date: event.date,
@@ -162,7 +163,7 @@ export async function getItemDetail(itemId: string): Promise<ItemDetailResponse 
       documentType: classification.ai_document_type, tags: classification.ai_tags } : null,
     userClassification: classification && effective.origin === "user" ? { primaryTopic: classification.user_primary_topic,
       documentType: classification.user_document_type, tags: classification.user_tags } : null,
-    actions, evidence, ...storedAnalysis(item.metadata, item.content_text),
+    actions, evidence, ...storedAnalysis(item.metadata, item.content_text, analysisDateContext(item)),
     processing: { status: item.processing_status },
     original: { url: google ? safeOriginalUrl(item.original_url) : null, previewType: google ? "google" as const : item.source === "upload" ? "upload" as const : "text" as const },
   };

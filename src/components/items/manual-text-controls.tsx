@@ -78,6 +78,8 @@ export function ManualTextControls({ userId }: { userId?: string } = {}) {
         setStatusText('저장 완료 · AI 분석 실패 (상세 페이지에서 재시도할 수 있습니다)');
       }
 
+      window.dispatchEvent(new Event('ai-hub:items-changed'));
+      window.dispatchEvent(new Event('ai-hub:actions-changed'));
       router.refresh();
     } catch (err) {
       setErrorText(err instanceof Error ? err.message : '요청을 처리하지 못했습니다.');
@@ -105,7 +107,7 @@ export function ManualTextControls({ userId }: { userId?: string } = {}) {
       <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <div>
           <p className="mt-1 text-sm text-muted-foreground">
-            복사한 텍스트나 메모를 직접 작성하여 자료로 추가합니다. 저장 후 본문을 Gemini로 보내 AI 분석(할 일, 마감일, 분류, 근거)을 수행합니다.
+            복사한 텍스트나 메모를 직접 작성하여 자료로 추가합니다. 저장 후 본문을 Gemini로 보내 AI 분석(할 일, 마감일, 일정, 분류, 근거)을 수행합니다.
           </p>
         </div>
 

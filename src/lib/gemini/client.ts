@@ -1,6 +1,7 @@
 import "server-only";
 import { setTimeout as delay } from "node:timers/promises";
 import { analysisSchema, validateAnalysis } from "@/lib/gemini/validation";
+import type { AnalysisDateContext } from "@/lib/gemini/date-context";
 
 export class GeminiAnalysisError extends Error {
   constructor(public readonly code: "GEMINI_NOT_CONFIGURED" | "GEMINI_UNAVAILABLE" | "GEMINI_INCOMPLETE", public readonly httpStatus?: number) { super(code); }
@@ -19,7 +20,8 @@ Marketing links, suggested reading, passive product announcements and generic fo
 links are not personal action obligations. Do not extract actions from those alone.
 Keep event dates in eventObservations. NEVER turn event dates into application start/deadline. Event dates and deadlines must remain distinct.
 Never infer missing year, relative date, timezone, requirements or conditions. If year missing use
-needs_review with null date/datetime. confirmed dates require an explicit year/month/day in evidence.
+needs_review with null date/datetime. The server resolves a literal month/day using dateContext and source context
+only when unambiguous. Never invent a year in evidence. confirmed model dates require explicit year/month/day.
 No deadline: none with all remaining fields null. No events: eventObservations: [].
 All evidence.text and rawText must be EXACT substrings of content_text, including whitespace.
 For deadlineObservation, evidence.text must include enough original source context to prove that the date is a deadline.
@@ -43,7 +45,7 @@ export function generationSchema(value: unknown): unknown {
       : generationSchema(child)]));
 }
 
-export async function analyzeGmailText(contentText: string, topics: string[]) {
+export async function analyzeGmailText(contentText: string, topics: string[], dateContext?: AnalysisDateContext) {
   const { key, model } = getGeminiConfig();
   let response: Response | undefined;
   const endsAt = Date.now() + 120_000;
@@ -56,7 +58,7 @@ export async function analyzeGmailText(contentText: string, topics: string[]) {
       method: "POST", cache: "no-store", signal: AbortSignal.timeout(remaining),
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: instruction }] },
-        contents: [{ role: "user", parts: [{ text: JSON.stringify({ existingTopics: topics, content_text: contentText }) }] }],
+        contents: [{ role: "user", parts: [{ text: JSON.stringify({ existingTopics: topics, content_text: contentText, ...(dateContext ? { dateContext } : {}) }) }] }],
         generationConfig: { maxOutputTokens: 16_384,
           responseFormat: { text: { mimeType: "APPLICATION_JSON", schema: generationSchema(analysisSchema) } } } }),
     });
@@ -83,5 +85,5 @@ export async function analyzeGmailText(contentText: string, topics: string[]) {
   const text = parts.map(object).filter((part) => part?.thought !== true && typeof part?.text === "string").map((part) => part!.text).join("");
   let result: unknown;
   try { result = JSON.parse(text); } catch { throw new GeminiAnalysisError("GEMINI_INCOMPLETE"); }
-  return validateAnalysis(result, contentText);
+  return validateAnalysis(result, contentText, dateContext);
 }

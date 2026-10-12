@@ -250,7 +250,7 @@ needs_review
 
 AI는 다음을 임의 계산하지 않는다.
 
-- 연도가 없는 날짜의 연도 추정
+- 기준일과 문맥 없이 연도가 없는 날짜의 연도 추정
 - 상대 날짜를 기준일 없이 절대 날짜로 변환
 - 시간대 추정
 - 행사일을 신청 마감일로 사용
@@ -258,6 +258,11 @@ AI는 다음을 임의 계산하지 않는다.
 - 문서 작성일을 Action 날짜로 사용
 
 시간까지 명확한 경우에만 `datetime`을 반환한다.
+
+2026-10-12 승인된 예외: 이번 배포는 Manual Text에 한해 서버가 입력 기준일 + Asia/Seoul과 원문 문맥으로 월·일의 연도를
+해석할 수 있다. Gemini는 연도 생략 날짜를 needs_review/date=null 후보로 유지하고, 서버가
+Evidence 검증 후 가장 가까운 자연스러운 연도를 정규화한다. 애매하면 needs_review를 유지한다.
+구체적 기준일·모호성·지원 범위는 `docs/SPEC.md` 42절을 따른다. 원문 인용은 변경하지 않는다.
 
 ---
 
@@ -535,7 +540,7 @@ Database = Enforced Integrity
 - schemaVersion은 "0.2"다. v0.1 출력은 이 처리 경계에서 거부한다.
 - ITEM 수준 eventObservations는 필수 배열이며 최대 10개다. 정보가 없으면 []다. Action이 없어도 행사 관찰값을 보존한다.
 - 항목은 status(confirmed/needs_review), date, datetime, rawText, evidence다. confirmed는 명확한 원문 날짜와 근거가 필수이고 needs_review는 date/datetime=null이다.
-- rawText는 Evidence 안의 정확한 부분 문자열이며 Evidence는 content_text의 정확한 인용이어야 한다. 연도/시간대/상대 날짜를 추측하지 않는다.
+- rawText는 Evidence 안의 정확한 부분 문자열이며 Evidence는 content_text의 정확한 인용이어야 한다. 시간대/상대 날짜를 추측하지 않는다. 연도 생략 월·일의 서버 해석만 8절의 승인된 예외를 따른다.
 - 행사일은 actions.deadline_date나 start_date로 자동 복사하지 않는다. 실제 신청 시작/마감의 별도 근거가 있어야 한다.
 - description은 추가하지 않는다. title/requirements/conditions/본문/Evidence를 사용한다.
 

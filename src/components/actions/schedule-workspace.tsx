@@ -7,7 +7,8 @@ import { ActionStateButton } from "@/components/items/write-controls";
 import { SourceBadge, WorkspaceSkeleton } from "@/components/workspace/workspace-ui";
 import { useActions, useScheduleItems } from "./use-workspace-data";
 import { FullMonthCalendar } from "./full-month-calendar";
-import { actionDay, actionGroup, dayInSeoul, dDay, eventGroup, eventOnDay, eventsFromDetail, isOverdue, monthCells, shortDate, weekEnd, type ScheduleEvent } from "./schedule-model";
+import { UnresolvedEvents } from "./unresolved-events";
+import { actionDay, actionGroup, dayInSeoul, dDay, eventGroup, eventOnDay, eventsFromDetail, unresolvedEventsFromDetail, isOverdue, monthCells, shortDate, weekEnd, type ScheduleEvent } from "./schedule-model";
 
 function ActionRow({action,today,now,compact=false}:{action:SearchActionResult;today:string;now:number;compact?:boolean}) {
   const date=actionDay(action), overdue=isOverdue(action,today,now);
@@ -65,6 +66,7 @@ export function ScheduleWorkspace({today:initialToday,now:initialNow,home=false}
   const actions=useActions(status), schedule=useScheduleItems(status==="open");
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),60000);return()=>clearInterval(timer);},[]);
   const events=Object.values(schedule.details).flatMap(eventsFromDetail).sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  const unresolvedEvents=Object.values(schedule.details).flatMap(unresolvedEventsFromDetail);
   const sorted=[...actions.rows].sort((a,b)=>(actionDay(a)||"9999").localeCompare(actionDay(b)||"9999")||a.actionId.localeCompare(b.actionId));
   const matching=sorted.filter(action=>(!type||action.type===type)&&(!selected||actionDay(action)===selected));
   const matchingEvents=events.filter(event=>!selected||eventOnDay(event,selected));
@@ -77,6 +79,7 @@ export function ScheduleWorkspace({today:initialToday,now:initialNow,home=false}
       {actions.busy?<WorkspaceSkeleton/>:actions.error?<p role="alert" className="text-sm text-red-600">{actions.error}<button onClick={actions.reload} className="ml-2 underline">다시 시도</button></p>:<><div className="space-y-2.5">{due.map(action=><ActionRow key={action.actionId} action={action} today={today} now={now} compact/>)}</div>{!due.length&&<p className="rounded-2xl border border-slate-200/60 bg-white/60 p-6 text-sm text-slate-400">다가오는 확정 마감이 없습니다.</p>}{!!overdue.length&&<Link href="/actions" className="mt-3 inline-block text-xs text-orange-600">기한이 지난 할 일 {overdue.length}건도 확인해 주세요 →</Link>}</>}
       </section>
       <section aria-labelledby="home-week"><div className="mb-4 flex items-center justify-between"><div><h2 id="home-week" className="text-lg font-semibold text-slate-800">이번 주 일정</h2><p className="mt-1 text-xs text-slate-400">행사·회의 날짜는 마감과 구분해 보여드려요.</p></div><CalendarDays className="size-4 text-[#7f99be]"/></div><div className="space-y-2.5">{week.map(event=><EventRow key={event.id} event={event}/>)}</div>{schedule.busy?<WorkspaceSkeleton rows={1}/>:!week.length&&<p className="rounded-2xl border border-slate-200/60 bg-white/60 p-6 text-sm text-slate-400">확인된 이번 주 일정이 없습니다.</p>}{schedule.error&&<p role="alert" className="mt-2 text-xs text-orange-600">{schedule.error}<button className="ml-2 underline" onClick={schedule.reload}>다시 시도</button></p>}{schedule.hasMore&&<Link href="/actions" className="mt-3 inline-block text-xs text-[#6d88b0]">최근 100개 자료의 일정 · 전체 조회 계속하기 →</Link>}</section>
+      <div className="lg:col-span-2"><UnresolvedEvents events={unresolvedEvents}/></div>
     </div>;
   }
   const groups=[{key:"overdue",label:"기한 지남",color:"text-red-500"},{key:"week",label:"이번 주",color:"text-[#5f7fae]"},{key:"next",label:"다음 주",color:"text-slate-600"},{key:"later",label:"이후 일정",color:"text-slate-600"},{key:"review",label:"날짜·조건 확인 필요",color:"text-amber-600"}];
@@ -100,5 +103,6 @@ export function ScheduleWorkspace({today:initialToday,now:initialNow,home=false}
       </div>
       <aside className="order-2 space-y-3 lg:sticky lg:top-20"><MonthCalendar month={month} onMonth={setMonth} today={today} actions={sorted} events={status==="open"?events:[]} selected={selected} onSelect={setSelected}/>{status==="open"&&<div className="text-xs leading-5 text-slate-400">{schedule.busy?<p role="status">일정과 근거를 확인하는 중… {Object.keys(schedule.details).length}/{schedule.items.length}</p>:<p>조회한 자료 {schedule.items.length}개에서 확인한 일정입니다.</p>}{schedule.error&&<p role="alert" className="mt-2 text-orange-600">{schedule.error}<button onClick={schedule.reload} className="ml-2 underline">다시 시도</button></p>}{schedule.hasMore&&<button disabled={schedule.busy} onClick={schedule.loadMore} className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[#6d88b0] disabled:opacity-50">이전 자료의 일정 더 불러오기</button>}</div>}</aside>
     </div>}
+    {status==="open"&&<UnresolvedEvents events={unresolvedEvents}/>}
   </div>;
 }

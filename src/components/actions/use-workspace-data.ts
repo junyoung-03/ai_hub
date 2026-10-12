@@ -70,6 +70,10 @@ export function useScheduleItems(enabled = true) {
   const [version,setVersion] = useState(0);
   const reload = useCallback(()=>{setRequestCursor(null);setVersion(value=>value+1);},[]);
   useEffect(() => {
+    window.addEventListener("ai-hub:items-changed", reload);
+    return () => window.removeEventListener("ai-hub:items-changed", reload);
+  }, [reload]);
+  useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
     async function run() {
