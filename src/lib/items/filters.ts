@@ -80,7 +80,10 @@ export function encodeCursor(position: Position, query: ItemQuery) {
 }
 
 export function libraryUrl(query: ItemQuery, cursor?: string) {
-  const params = new URLSearchParams(query.filters);
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query.filters)) {
+    if (value !== undefined) params.set(key, value);
+  }
   if (query.limit !== 30) params.set("limit", String(query.limit));
   if (cursor) params.set("cursor", cursor);
   return `/library${params.size ? `?${params}` : ""}`;

@@ -89,6 +89,25 @@ test("filters reject ambiguous parameters, invalid enum/date/limit/cursor and cl
   }
 });
 
+test("Library source tabs return to all without serializing undefined filters", () => {
+  for (const source of database.Constants.public.Enums.item_source) {
+    const input = filters.parseItemQuery(new URLSearchParams({ source }));
+    const url = filters.libraryUrl({ ...input, filters: { ...input.filters, source: undefined } });
+    assert.equal(url, "/library");
+    assert.deepEqual(plain(filters.parseItemQuery(new URL(url, "http://localhost").searchParams).filters), {});
+  }
+
+  const input = filters.parseItemQuery(new URLSearchParams("source=calendar&topic=공지&processingStatus=completed&limit=10"));
+  const cursor = filters.encodeCursor({ id, createdAt: time }, input);
+  const page = filters.parseItemQuery(new URLSearchParams(new URL(filters.libraryUrl(input, cursor), "http://localhost").search));
+  const link = new URL(filters.libraryUrl({ ...page, filters: { ...page.filters, source: undefined } }), "http://localhost");
+  assert.equal(link.searchParams.has("source"), false);
+  assert.equal(link.searchParams.has("cursor"), false);
+  const parsed = filters.parseItemQuery(link.searchParams);
+  assert.deepEqual(plain(parsed.filters), { processingStatus: "completed", topic: "공지" });
+  assert.equal(parsed.limit, 10);
+});
+
 test("cursor preserves microseconds and is bound to the filter/limit; next link keeps all filters", () => {
   const input = filters.parseItemQuery(new URLSearchParams("source=gmail&topic=등록금&limit=1"));
   const cursor = filters.encodeCursor({ id, createdAt: time }, input);
