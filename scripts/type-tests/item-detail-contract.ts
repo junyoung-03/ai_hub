@@ -26,7 +26,7 @@ export type ContractChecks = [
   Assert<Equal<Action["status"], "open" | "completed">>,
   Assert<Equal<Action["deadlineStatus"], "confirmed" | "needs_review" | "none">>,
   Assert<Equal<Classification["tags"], string[] | null>>,
-  Assert<Equal<AIAnalysis["schemaVersion"], "0.2">>,
+  Assert<Equal<AIAnalysis["schemaVersion"], "0.2" | "0.3">>,
   Assert<Extends<EventObservation, DateObservation>>,
   Assert<Equal<EventObservation["status"], "confirmed" | "needs_review">>,
   Assert<Equal<EventObservation["evidence"], AnalysisEvidence>>,

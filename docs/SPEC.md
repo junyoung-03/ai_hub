@@ -1422,3 +1422,33 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
   명시적 재분석 요청에서는 바뀐 해석을 기존 claim/RPC로 저장할 수 있다. 기존 DB Action의 마감일은 읽기 시 재구성하지 않는다.
 - Google 일정 / AI 일정 / 마감을 달력에서 구분하며, 불확실한 Event는 날짜 확인 필요 목록에 남긴다.
   Manual 저장·분석 완료 시 일정/Action 조회를 갱신한다. Google 원본 이벤트를 생성하지 않는다.
+
+## 43. 승인된 독립 광고 판별 계약 (2026-10-12, 로컬 구현 / 운영 미적용)
+
+- 상세 계약은 `docs/reviews/PROMOTIONAL_NOISE_DESIGN.md`를 따른다. Notion v0.5는 변경하지 않는다.
+- 기존 ITEM Gemini 분석 1회의 structured output을 v0.3으로 확장하고 `noiseAssessment`를 추가한다.
+  기존 Classification/Action/Deadline/Event 의미는 유지한다. v0.2 저장 결과는 읽을 수 있으며 출시 backfill은 하지 않는다.
+- 광고 판정은 독립 `item_noise_assessments`에 저장한다. 검증된 Evidence와 입력 fingerprint가 필수며 기존 원자 분석 저장에서 함께 처리한다.
+- 사용자 광고 수정은 null / force_show / force_promotional이다. AI 쓰기는 사용자 컬럼을 변경하지 않는다.
+- 공통 DB 표시 정책은 사용자 force_show → 사용자 force_promotional → 보호 조건 → 유효 promotional → 나머지 표시 순이다.
+  보호 조건은 AI verdict를 변경하지 않는다. 미판정/실패/stale/불확실은 자동 숨김하지 않는다.
+- Library/Home의 `includePromotional` GET 값은 true/false, 기본 false다. Search의 같은 이름 필터는 boolean이다.
+  모두 후보/페이지 제한 전에 적용하며 ON은 숨김 자료를 검색 조건에 포함한다. Calendar/Action 조회는 ITEM 숨김으로 데이터를 누락하지 않는다.
+- `GET /api/v1/items/:itemId/noise-override`는 소유자에게 판정/표시 요약을 반환한다.
+  `PATCH`는 `{userOverride: null | "force_show" | "force_promotional"}`만 허용한다. 인증·소유권·동일 origin·body 제한·no-store를 적용한다.
+- 토글은 커서 context를 변경하고 첫 페이지부터 다시 조회한다. 광고/override/보호 상태 변경은 소유자 Search snapshot을 무효화한다.
+  무효화된 snapshot의 커서는 410으로 반환하며, 조회 시 Gemini 광고 호출이나 Embedding 재생성은 없다.
+- Migration은 작성 및 격리 PostgreSQL에서 검증한다. 현재 운영에 연결된 ai-hub-dev에는 적용하지 않는다.
+
+### 43.1 자동배포를 위한 readiness gate (2026-10-12)
+
+- 서버 `PROMOTIONAL_NOISE_ENABLED`는 정확히 `true`일 때만 활성 후보이며 기본은 false다. 클라이언트 입력으로 활성화할 수 없다.
+- 활성 후보라도 읽기 전용 `promotional_noise_ready()` 및 REST schema cache의 assessment/visibility 조회가 모두 성공해야 기능을 사용한다.
+  프로브는 2초 제한이며 캐시 누락·권한·네트워크 실패는 기능 OFF로 처리한다. positive process cache는 두지 않는다.
+- OFF 또는 DB-not-ready에서는 새 객체 조회/override를 하지 않고 기존 Library/Home 및 Search RPC 경로를 사용한다.
+  OFF는 Gemini v0.2 prompt/schema/fingerprint/저장 계약, ON+READY만 v0.3을 사용한다. 추가 Gemini 호출은 없다.
+- 기존 Search candidate/similar RPC는 보존하고 ON에서만 별도 promotional RPC를 사용한다.
+  Promotional snapshot만 표시 정책 변경으로 무효화한다. OFF의 cursor context는 기존 계약이며 모드 불일치·만료는 410 후 재검색한다.
+- 이미 저장된 v0.3 Classification/Action/Event는 OFF에서도 읽을 수 있다. 일차 운영 복구는 flag OFF이며 bfe7f5f로의 코드 롤백을 호환된 것으로 간주하지 않는다.
+- Library 또는 promotional Search RPC의 schema-cache race는 legacy 경로로 한 번만 fallback한다. 모든 DB 장애를 성공으로 위장하지 않는다.
+- 아직 적용하지 않은 migration 파일에는 readiness/분리 RPC/선택 snapshot 무효화 계약을 반영한다. 이번 단계에서 원격 DB 적용·Commit·Push·Deploy는 하지 않는다.

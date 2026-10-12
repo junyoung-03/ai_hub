@@ -14,8 +14,18 @@ export type ActionCandidate = {
   requirements: string[]; conditions: string[]; startObservation: DateObservation;
   deadlineObservation: DateObservation; evidence: AnalysisEvidence[];
 };
-export type ItemAnalysis = {
-  schemaVersion: "0.2";
+export type NoiseAssessment = {
+  verdict: "normal" | "promotional" | "uncertain";
+  confidence: number | null;
+  evidence: AnalysisEvidence[];
+  reasons: ("discount" | "coupon" | "sales" | "marketing_newsletter" | "general_promotion" | "non_promotional" | "insufficient_context")[];
+  protectionSignals: { reason: "payment" | "billing" | "contract" | "security" | "account" | "service_outage" | "personal_obligation" | "uncertain_relationship"; evidence: AnalysisEvidence }[];
+};
+type AnalysisBase = {
   classification: { primaryTopic: string; documentType: Database["public"]["Enums"]["document_type"]; tags: string[] };
   actions: ActionCandidate[]; eventObservations: DateObservation[];
 };
+export type ItemAnalysis = AnalysisBase & (
+  | { schemaVersion: "0.2"; noiseAssessment?: never }
+  | { schemaVersion: "0.3"; noiseAssessment: NoiseAssessment }
+);

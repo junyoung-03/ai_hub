@@ -1,4 +1,5 @@
 import "server-only";
+import { promotionalReady, missingPromotionalContract } from "@/lib/items/promotional-gate";
 import { requireUser } from "@/lib/supabase/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/database";
@@ -6,13 +7,14 @@ import { ACTIVE_EMBEDDING, SEARCH_LIMITS, SearchError, cursorContext, decodeCurs
 import { chunkItem, type SearchItem } from "./chunker";
 import { createEmbeddingProvider, semanticItemAllowed, validateVector, type EmbeddingProvider } from "./provider";
 
-type RpcName = "search_runtime" | "search_index" | "search_candidates" | "search_similar" | "search_coverage";
+type RpcName = "search_runtime" | "search_index" | "search_candidates" | "search_candidates_promotional" | "search_similar" | "search_similar_promotional" | "search_coverage";
 type Admin = ReturnType<typeof createAdminClient>;
 // Local typed RPC adapter until the applied migration is reflected in generated DB types.
 export function searchStore(admin: Admin = createAdminClient()) {
   const rpc = admin.rpc.bind(admin) as unknown as (name: RpcName, args: Record<string, Json | undefined>) => PromiseLike<{ data: unknown; error: { code?: string } | null }>;
   return { admin, async call(name: RpcName, args: Record<string, Json | undefined>): Promise<unknown> {
     const { data, error } = await rpc(name, args);
+    if (name.endsWith("_promotional") && missingPromotionalContract(error)) throw new SearchError("PROMOTIONAL_CONTRACT_UNAVAILABLE", 503);
     if (error) throw new SearchError(error.code === "P0002" ? "NOT_FOUND" : error.code === "55P03" ? "INDEX_BUSY" : ["40001", "PT409"].includes(error.code ?? "") ? "STALE_INPUT" : "SEARCH_STORAGE_UNAVAILABLE",
       error.code === "P0002" ? 404 : error.code === "55P03" || ["40001", "PT409"].includes(error.code ?? "") ? 409 : 503);
     return data;
@@ -20,7 +22,13 @@ export function searchStore(admin: Admin = createAdminClient()) {
 }
 type Store = ReturnType<typeof searchStore>;
 async function runtime(store: Store, userId: string, op: string, payload: unknown = {}) {
-  return record(await store.call("search_runtime", { p_op: op, p_user_id: userId, p_payload: payload as Json }));
+  try {
+    return record(await store.call("search_runtime", { p_op: op, p_user_id: userId, p_payload: payload as Json }));
+  } catch (error) {
+    // A visibility mutation invalidates the snapshot: restart rather than retry its cursor.
+    if (op === "page" && error instanceof SearchError && error.code === "NOT_FOUND") throw new SearchError("CURSOR_EXPIRED", 410);
+    throw error;
+  }
 }
 export async function consumeRate(store: Store, userId: string, category: "request" | "embedding" | "index") {
   const r = await runtime(store, userId, "rate", { category });
@@ -90,10 +98,18 @@ export function serializeResult(raw: unknown, query: string): Record<string, Jso
 export async function search(value: unknown, provider: EmbeddingProvider = createEmbeddingProvider(), injected?: Store) {
   if (provider.identity.version !== ACTIVE_EMBEDDING.version || provider.identity.dimension !== ACTIVE_EMBEDDING.dimension
     || provider.identity.provider !== ACTIVE_EMBEDDING.provider || provider.identity.model !== ACTIVE_EMBEDDING.model) throw new SearchError("EMBEDDING_VERSION_MISMATCH", 503);
-  const user = await requireUser(), input = parseSearch(value), store = injected ?? searchStore(), context = cursorContext(input);
+  const user = await requireUser(), input = parseSearch(value), store = injected ?? searchStore();
+  let promotional = await promotionalReady();
+  if (!promotional) delete input.filters.includePromotional;
+  let context = cursorContext(input, promotional);
   await consumeRate(store, user.id, "request");
   let session: string, expires: number, offset = 0;
-  if (input.cursor) { const c = decodeCursor(input.cursor, context); session = c.session; expires = c.expires; offset = c.offset; }
+  if (input.cursor) {
+    let c;
+    try { c = decodeCursor(input.cursor, context); }
+    catch (error) { if (error instanceof SearchError && error.code === "INVALID_CURSOR") throw new SearchError("CURSOR_EXPIRED", 410); throw error; }
+    session = c.session; expires = c.expires; offset = c.offset;
+  }
   else {
     // Validate pagination configuration before any external provider request.
     encodeCursor({ session: "10000000-0000-4000-8000-000000000000", offset: 0, limit: input.limit, context, version: ACTIVE_EMBEDDING.version, expires: Date.now() + 300_000 });
@@ -103,7 +119,11 @@ export async function search(value: unknown, provider: EmbeddingProvider = creat
     let vector: number[] | null = null, degraded = false, retryAfter: number | null = null, querySentToProvider = false;
     const semanticEnabled = input.semantic && intent.kind === "documents" && process.env.SEARCH_SEMANTIC_ENABLED === "true";
     if (semanticEnabled) {
-      const key = hash(JSON.stringify([ACTIVE_EMBEDDING.version, input.query, filters, "Asia/Seoul"])), cache = await runtime(store, user.id, "query_claim", { key, version: ACTIVE_EMBEDDING.version });
+      // Visibility changes result candidates, not the query's embedding input.
+      // Reuse the existing vector when only the promotional toggle changes.
+      const embeddingFilters = { ...filters };
+      delete embeddingFilters.includePromotional;
+      const key = hash(JSON.stringify([ACTIVE_EMBEDDING.version, input.query, embeddingFilters, "Asia/Seoul"])), cache = await runtime(store, user.id, "query_claim", { key, version: ACTIVE_EMBEDDING.version });
       if (cache.state === "cached") vector = validateVector(JSON.parse(String(cache.embedding)));
       else if (cache.state === "claimed") {
         try {
@@ -118,11 +138,21 @@ export async function search(value: unknown, provider: EmbeddingProvider = creat
         }
       } else degraded = true;
     } else if (input.semantic && intent.kind === "documents") degraded = true;
-    const raw = await store.call("search_candidates", { p_user_id: user.id, p_version: ACTIVE_EMBEDDING.version, p_query: input.query,
+    const candidates = () => store.call(promotional ? "search_candidates_promotional" : "search_candidates", {
+      p_user_id: user.id, p_version: ACTIVE_EMBEDDING.version, p_query: input.query,
       p_vector: vector ? JSON.stringify(vector) : null, p_filters: filters, p_intent: intent as unknown as Json });
+    let raw;
+    try { raw = await candidates(); }
+    catch (error) {
+      if (!promotional || !(error instanceof SearchError) || error.code !== "PROMOTIONAL_CONTRACT_UNAVAILABLE") throw error;
+      promotional = false; delete filters.includePromotional; delete input.filters.includePromotional;
+      context = cursorContext(input, false);
+      raw = await candidates();
+    }
     if (!Array.isArray(raw)) throw new SearchError("INVALID_SEARCH_RESULT", 502);
     const coverage = await store.call("search_coverage", { p_user_id: user.id, p_version: ACTIVE_EMBEDDING.version });
     const info = { coverage, intent: intent.kind, appliedFilters: intent.kind === "actions" ? { ...filters, from: intent.from, to: intent.to, dateBasis: "action_deadline" } : { ...filters, dateBasis: "source_date" },
+      ...(promotional ? { promotionalEnabled: true } : {}),
       mode: intent.kind === "actions" ? "action_sql" : vector ? "hybrid" : "keyword_only", degraded, retryAfter,
       semantic: { requested: input.semantic, querySentToProvider, provider: semanticEnabled ? ACTIVE_EMBEDDING.provider : null,
         disclosure: "semantic=true 검색 query는 Gemini에 외부 전송될 수 있습니다. Unpaid Services에서는 입력·출력이 제품/ML 개선 및 사람의 검토에 사용될 수 있으므로 민감·기밀·개인정보를 보내지 마세요. 환경별 Paid/Unpaid 데이터 사용 조건을 확인하세요." },
@@ -180,7 +210,13 @@ export async function similarItems(itemId: string, limit = 5, injected?: Store) 
   const store = injected ?? searchStore(); await consumeRate(store, user.id, "request");
   const { data, error } = await store.admin.from("items").select("id").eq("id", itemId).eq("user_id", user.id).maybeSingle();
   if (error) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503); if (!data) throw new SearchError("NOT_FOUND", 404);
-  const rows = await store.call("search_similar", { p_user_id: user.id, p_item_id: itemId, p_version: ACTIVE_EMBEDDING.version, p_limit: limit });
+  const args = { p_user_id: user.id, p_item_id: itemId, p_version: ACTIVE_EMBEDDING.version, p_limit: limit };
+  let rows;
+  try { rows = await store.call(await promotionalReady() ? "search_similar_promotional" : "search_similar", args); }
+  catch (error) {
+    if (!(error instanceof SearchError) || error.code !== "PROMOTIONAL_CONTRACT_UNAVAILABLE") throw error;
+    rows = await store.call("search_similar", args);
+  }
   const indexed = record(await store.call("search_index", { p_op: "read", p_user_id: user.id, p_item_id: itemId, p_version: ACTIVE_EMBEDDING.version }));
   return { status: indexed.state === "complete" && indexed.semantic === true ? "results" : "not_indexed", embeddingVersion: ACTIVE_EMBEDDING.version,
     results: Array.isArray(rows) ? rows.map(v => { const r = record(v); return { itemId: r.itemId, title: r.title, source: r.source, format: r.format,

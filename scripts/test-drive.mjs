@@ -105,7 +105,7 @@ function collector({ existing = null, before = file(), after = before, text = "B
         if (!candidates) return { data: [{ id: "connection", status: "connected" }], error: null };
         const p = load("src/lib/items/analysis-policy.ts");
         return { data: [{ id: existing?.id ?? "new-item", source: "drive", format: "document", content_text: text,
-          metadata: analysed ? { aiAnalysis: { schemaVersion: "0.2", model: "gemini-fixture", inputFingerprint: p.analysisFingerprint(text, "gemini-fixture") } } : {} }], error: candidateError ? { code: "synthetic" } : null };
+          metadata: analysed ? { aiAnalysis: { schemaVersion: "0.2", model: "gemini-fixture", inputFingerprint: p.analysisFingerprint(text, "gemini-fixture", "0.2") } } : {} }], error: candidateError ? { code: "synthetic" } : null };
       },
       async maybeSingle() { return { data: connection ? null : existing, error: null }; } };
     return chain;

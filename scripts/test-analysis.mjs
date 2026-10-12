@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fixture, content, quote, none } from "./analysis-fixtures.mjs";
 import { loadAnalysisModule as load } from "./analysis-loader.mjs";
+const providerFixture = () => ({...fixture(),schemaVersion:'0.3',noiseAssessment:{verdict:'normal',confidence:null,evidence:[],reasons:['non_promotional'],protectionSignals:[]}});
 const validator = load("src/lib/gemini/validation.ts");
 
 test("v0.2 JSON Schema rejects obsolete versions, unknown fields, invalid calendar dates and missing event array", () => {
@@ -49,9 +50,9 @@ test("Gemini HTTP contract is server-only and validates response before returnin
       const transport=payload.generationConfig.responseFormat.text.schema;
       assert.ok(transport.properties.actions.items.properties.title);
       assert.equal(transport.properties.actions.maxItems,undefined);
-      return Response.json({candidates:[{finishReason:"STOP",content:{parts:[{text:JSON.stringify(fixture())}]}}]});}
+      return Response.json({candidates:[{finishReason:"STOP",content:{parts:[{text:JSON.stringify(providerFixture())}]}}]});}
   });
-  assert.equal((await client.analyzeGmailText(content,[])).schemaVersion,"0.2");
+  assert.equal((await client.analyzeGmailText(content,[],undefined,"0.3")).schemaVersion,"0.3");
   const failed=load("src/lib/gemini/client.ts",{"@/lib/gemini/validation":validator},{process:{env:{GEMINI_API_KEY:"synthetic-key",GEMINI_MODEL:"gemini-synthetic"}},fetch:async()=>Response.json({private:"secret-provider-body"},{status:400})});
   await assert.rejects(failed.analyzeGmailText(content,[]),e=>e.code==="GEMINI_UNAVAILABLE"&&!e.message.includes("private"));
   const tooMany=fixture();tooMany.classification.tags=Array(13).fill("synthetic");
@@ -74,7 +75,7 @@ test("Gemini retries are bounded to three attempts; cooldown and permanent error
     let calls=0,waits=0;
     const client=load("src/lib/gemini/client.ts",{"@/lib/gemini/validation":validator,"node:timers/promises":{async setTimeout(){waits++;}}},
       {process:{env:{GEMINI_API_KEY:"synthetic-key",GEMINI_MODEL:"gemini-synthetic"}},fetch:async()=>{calls++;return Response.json({}, {status,headers});}});
-    await assert.rejects(client.analyzeGmailText(content,[]),e=>e.code==="GEMINI_UNAVAILABLE");
+    await assert.rejects(client.analyzeGmailText(content,[],undefined,"0.3"),e=>e.code==="GEMINI_UNAVAILABLE");
     return {calls,waits};
   };
   assert.deepEqual(await exercise(503),{calls:3,waits:2});
@@ -82,8 +83,8 @@ test("Gemini retries are bounded to three attempts; cooldown and permanent error
   assert.deepEqual(await exercise(400),{calls:1,waits:0});
   let calls=0;
   const client=load("src/lib/gemini/client.ts",{"@/lib/gemini/validation":validator,"node:timers/promises":{async setTimeout(){}}},
-    {process:{env:{GEMINI_API_KEY:"synthetic-key",GEMINI_MODEL:"gemini-synthetic"}},fetch:async()=>{calls++;return calls<3?Response.json({}, {status:503}):Response.json({candidates:[{finishReason:"STOP",content:{parts:[{text:JSON.stringify(fixture())}]}}]});}});
-  assert.equal((await client.analyzeGmailText(content,[])).schemaVersion,"0.2");assert.equal(calls,3);
+    {process:{env:{GEMINI_API_KEY:"synthetic-key",GEMINI_MODEL:"gemini-synthetic"}},fetch:async()=>{calls++;return calls<3?Response.json({}, {status:503}):Response.json({candidates:[{finishReason:"STOP",content:{parts:[{text:JSON.stringify(providerFixture())}]}}]});}});
+  assert.equal((await client.analyzeGmailText(content,[],undefined,"0.3")).schemaVersion,"0.3");assert.equal(calls,3);
 });
 test("anonymous analysis and foreign/missing ITEM cannot reach Gemini or service client", async () => {
   const anonymous=load("src/lib/items/analysis.ts",{...dependencies,"@/lib/supabase/auth":{async requireUser(){throw new Error("auth-required");}}});

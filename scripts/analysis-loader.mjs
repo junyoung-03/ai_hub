@@ -13,6 +13,7 @@ export function loadAnalysisModule(path, imports = {}, globals = {}) {
     ...globals, require(name) {
       if (name === "server-only") return {};
       if (name in imports) return imports[name];
+      if (name === "@/lib/items/promotional-gate") return { promotionalReady: async () => false, missingPromotionalContract: error => ["42P01","42703","42883","PGRST202","PGRST204","PGRST205"].includes(error?.code) };
       if (name === "@/lib/items/analysis-policy") return loadAnalysisModule("src/lib/items/analysis-policy.ts");
       if (name === "@/lib/gemini/date-context") return loadAnalysisModule("src/lib/gemini/date-context.ts");
       if (name.endsWith("AI_OUTPUT_SCHEMA.json")) return require("../AI_OUTPUT_SCHEMA.json");

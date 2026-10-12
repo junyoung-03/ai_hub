@@ -13,6 +13,7 @@ export function loadSearch(path,overrides={},globals={}) {
   runInNewContext(source,{exports,Buffer,URL,URLSearchParams,Request,Response,Headers,AbortSignal,Date,process,fetch,setTimeout,clearTimeout,...globals,require(name){
    if(name==='server-only')return {};
    if(name in overrides)return overrides[name];
+   if(name === "@/lib/items/promotional-gate")return {promotionalReady:async()=>false};
    if(name.startsWith('node:'))return require(name);
    if(name.startsWith('.'))return load(resolve(dirname(absolute),`${name}.ts`));
    if(name.startsWith('@/lib/search/'))return load(`src/lib/search/${name.split('/').at(-1)}.ts`);

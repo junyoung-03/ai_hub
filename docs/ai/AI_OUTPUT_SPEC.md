@@ -1,9 +1,27 @@
 # docs/ai/AI_OUTPUT_SPEC.md
 
-# etc. — AI Structured Output 명세 v0.2
+# etc. — AI Structured Output 명세 v0.3 (v0.2 저장 결과 호환)
 
 > 기준: 서비스 기획 및 개발 기준서 v0.5 + DB Migration v0.5 + API_SPEC v0.1  
 > 목적: Gemini가 비정형 ITEM을 분석한 뒤 서버가 안전하게 검증·저장할 수 있는 후보 JSON을 생성한다.
+
+## v0.3 승인 확장 — 운영 미적용
+
+아래의 기존 v0.2 Classification / Action / Deadline / Event 계약은 유지한다. 새 Gemini 요청은
+schemaVersion=0.3과 독립 noiseAssessment를 같은 분석 응답에서 반환한다. v0.2는 저장 결과 읽기에만 허용하며
+새 provider 응답에 noiseAssessment가 없으면 불완전 응답으로 처리한다. 광고 전용 추가 호출은 없다.
+
+noiseAssessment: verdict(normal/promotional/uncertain), confidence(0~1 또는 null), evidence(기존 Evidence 배열),
+reasons(광고/비광고/불확실 사유 enum), protectionSignals(각각 reason과 Evidence 객체를 갖는 배열).
+실제 필수 필드·enum·상한은 AI_OUTPUT_SCHEMA.json을 따른다. promotional에는 검증된 원문 Evidence가 필수다.
+confidence만으로 숨기지 않으며 uncertain은 insufficient_context 사유를 포함한다.
+
+protectionSignals는 원문 문맥으로 확인하는 결제·청구·계약·보안·계정·장애·개인 의무·불명확한 개인 관계다.
+광고 판정과 표시를 구분한다. promotional과 Event/중요 보호 신호가 공존할 수 있고 서버가 표시를 결정한다.
+user_override와 effective_visibility는 모델이 반환하지 않는다. 상세 계약: `../reviews/PROMOTIONAL_NOISE_DESIGN.md`.
+
+새 분석은 기존 Evidence/날짜 검증 후 독립 assessment를 원자 저장하며 사용자 override를 보존한다.
+근거 검증 실패는 저장되지 않으며 분석 실패 자료는 자동 숨김하지 않는다. 과거 자료 일괄 재분석은 별도 승인 사항이다.
 
 ---
 
@@ -566,3 +584,7 @@ Gemini 호출은 서버 전용 GEMINI_API_KEY와 명시적인 GEMINI_MODEL을 �
 Retry-After를 존중하되 10초를 초과하는 대기는 요청 안에서 수행하지 않고 실패로 반환한다.
 출력 검증 오류/다른 HTTP 오류/네트워크 불명확 실패는 자동 재시도하지 않는다. 모델은 자동 변경하지 않는다.
 실제 검증 스크립트는 재시도 소진 시 batch를 중단하고 PARTIAL로 보고한다.
+
+### Rollout schema gate
+
+서버 PROMOTIONAL_NOISE_ENABLED는 기본 false다. OFF 또는 DB contract/cache 미준비는 기존 v0.2 prompt/schema/fingerprint/저장 계약을 사용한다. ON+READY에서만 같은 Gemini 분석 호출을 v0.3으로 확장한다. 기존 v0.2/v0.3 분석 결과 reader는 flag와 독립적이다. 분석 후 저장 직전에 gate가 꺼지면 검증된 결과에서 noiseAssessment를 제외하고 v0.2 fingerprint로 저장하며 Gemini를 다시 호출하지 않는다.

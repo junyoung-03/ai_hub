@@ -1,12 +1,12 @@
 {
   "type": "object",
-  "title": "AIHubItemAnalysisV02",
-  "description": "승인된 Phase 6A ITEM 분석 구조. Classification, Action 후보와 독립된 행사 관찰값을 반환한다.",
+  "title": "AIHubItemAnalysisV03",
+  "description": "ITEM 분석 1회: 기존 분류/행동/일정과 독립 광고 판정. 표시 정책은 서버가 결정한다.",
   "properties": {
     "schemaVersion": {
       "type": "string",
       "enum": [
-        "0.2"
+        "0.3"
       ],
       "description": "Structured Output schema version."
     },
@@ -524,13 +524,229 @@
         ],
         "additionalProperties": false
       }
+    },
+    "noiseAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "promotional",
+            "uncertain"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "행동 요구/선택/확인 필요성을 직접 뒷받침하는 짧은 원문 근거."
+              },
+              "locator": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "text_span",
+                      "page",
+                      "email_section",
+                      "calendar_field",
+                      "metadata",
+                      "unknown"
+                    ]
+                  },
+                  "page": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "section": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "startChar": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "endChar": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "field": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "page",
+                  "section",
+                  "startChar",
+                  "endChar",
+                  "field"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "text",
+              "locator"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "items": {
+            "type": "string",
+            "enum": [
+              "discount",
+              "coupon",
+              "sales",
+              "marketing_newsletter",
+              "general_promotion",
+              "non_promotional",
+              "insufficient_context"
+            ]
+          }
+        },
+        "protectionSignals": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "payment",
+                  "billing",
+                  "contract",
+                  "security",
+                  "account",
+                  "service_outage",
+                  "personal_obligation",
+                  "uncertain_relationship"
+                ]
+              },
+              "evidence": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "행동 요구/선택/확인 필요성을 직접 뒷받침하는 짧은 원문 근거."
+                  },
+                  "locator": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "text_span",
+                          "page",
+                          "email_section",
+                          "calendar_field",
+                          "metadata",
+                          "unknown"
+                        ]
+                      },
+                      "page": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "section": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "startChar": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "endChar": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "field": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "page",
+                      "section",
+                      "startChar",
+                      "endChar",
+                      "field"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "text",
+                  "locator"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "reason",
+              "evidence"
+            ]
+          }
+        }
+      },
+      "required": [
+        "verdict",
+        "confidence",
+        "evidence",
+        "reasons",
+        "protectionSignals"
+      ]
     }
   },
   "required": [
     "schemaVersion",
     "classification",
     "actions",
-    "eventObservations"
+    "eventObservations",
+    "noiseAssessment"
   ],
   "additionalProperties": false
 }

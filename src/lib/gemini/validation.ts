@@ -11,6 +11,12 @@ export class AnalysisValidationError extends Error {
 const ajv = new Ajv({ allowUnionTypes: true });
 addFormats(ajv);
 const matchesSchema = ajv.compile<ItemAnalysis>(schema);
+// Both stored versions remain readable; provider schema is selected by the server readiness gate.
+export const legacySchema = structuredClone(schema);
+legacySchema.properties.schemaVersion.enum = ["0.2"];
+delete (legacySchema.properties as Partial<typeof legacySchema.properties>).noiseAssessment;
+legacySchema.required = legacySchema.required.filter((key) => key !== "noiseAssessment");
+const matchesLegacySchema = ajv.compile<ItemAnalysis>(legacySchema);
 const actionIntent = /해야|하십시오|하세요|해\s?주세요|바랍니다|필수|의무|신청|접수|제출|납부|등록|확인|갱신|응답|예약|결제|취소|참여|가입|선택|변경|수정|회신|검토|구독|해지|must\b|please\b|apply\b|submit\b|pay\b|register\b|rsvp\b|renew\b|verify\b|sign\s?in|confirm\b|join\b|select\b|update\b|reply\b|review\b|subscribe\b|unsubscribe\b/i;
 const deadlineIntent = /마감|기한|까지|내에|deadline|due\b|by\b|until\b|no later than/i;
 const startIntent = /신청|접수|등록|제출|apply|application|registration|submission/i;
@@ -65,7 +71,7 @@ function observation(source: string, value: DateObservation, role: "start" | "de
 }
 
 export function validateAnalysis(input: unknown, source: string, context?: AnalysisDateContext): ItemAnalysis {
-  if (!matchesSchema(input)) throw new AnalysisValidationError();
+  if (!matchesSchema(input) && !matchesLegacySchema(input)) throw new AnalysisValidationError();
   const value: ItemAnalysis = structuredClone(input);
   value.classification.primaryTopic = value.classification.primaryTopic.trim();
   if (!value.classification.primaryTopic) throw new AnalysisValidationError("TOPIC");
@@ -86,6 +92,15 @@ export function validateAnalysis(input: unknown, source: string, context?: Analy
     seen.add(key);
   }
   value.eventObservations.forEach((event) => observation(source, event, "event", context));
+  if (value.schemaVersion === "0.3") {
+    const noise = value.noiseAssessment;
+    if (noise.verdict === "promotional" && !noise.evidence.length) throw new AnalysisValidationError("NOISE_EVIDENCE");
+    if (noise.verdict === "promotional" && (noise.reasons.includes("non_promotional") || noise.reasons.includes("insufficient_context")
+      || !noise.reasons.some((reason) => ["discount", "coupon", "sales", "marketing_newsletter", "general_promotion"].includes(reason)))) throw new AnalysisValidationError("NOISE_REASON");
+    if (noise.verdict === "uncertain" && !noise.reasons.includes("insufficient_context")) throw new AnalysisValidationError("NOISE_REASON");
+    noise.evidence.forEach((quote) => evidence(source, quote));
+    noise.protectionSignals.forEach((signal) => evidence(source, signal.evidence));
+  }
   return value;
 }
 export { schema as analysisSchema };

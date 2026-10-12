@@ -9,12 +9,13 @@ import { formatLabels } from "@/lib/items/presentation";
 import { SearchDemoResults } from "./search-demo-results";
 import { SourceBadge, WorkspaceSkeleton, workspaceSources } from "@/components/workspace/workspace-ui";
 
-export function SearchWorkspace({ initialQuery = "", actions = false, today = false, initialNow = 0 }: { initialQuery?: string; actions?: boolean; today?: boolean; initialNow?: number }) {
+export function SearchWorkspace({ initialQuery = "", actions = false, today = false, initialNow = 0, promotionalEnabled = false }: { initialQuery?: string; actions?: boolean; today?: boolean; initialNow?: number; promotionalEnabled?: boolean }) {
   const router = useRouter();
   const [now, setNow] = useState(initialNow);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(timer); }, []);
   const [query, setQuery] = useState(initialQuery);
   const [source, setSource] = useState(""); const [format, setFormat] = useState("");
+  const [includePromotional, setIncludePromotional] = useState(false);
   const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [semantic, setSemantic] = useState(false);
   const [page, setPage] = useState<SearchPageResponse>(); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [tab, setTab] = useState("all"); const abort = useRef<AbortController | null>(null);
@@ -34,7 +35,7 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
       if (["required", "optional"].includes(tab)) parameters.set("type", tab);
       if (cursor) parameters.set("cursor", cursor);
       const response = await fetch(directActions ? `/api/v1/actions?${parameters}` : "/api/v1/search", { method: directActions ? "GET" : "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", signal: controller.signal,
-        ...(directActions ? {} : { body: JSON.stringify({ query: query.trim(), filters: { source: source ? [source] : [], format: format ? [format] : [], from: from || null, to: to || null }, limit: 20, semantic, cursor }) }) });
+        ...(directActions ? {} : { body: JSON.stringify({ query: query.trim(), filters: { source: source ? [source] : [], format: format ? [format] : [], from: from || null, to: to || null, ...(promotionalEnabled ? { includePromotional } : {}) }, limit: 20, semantic, cursor }) }) });
       if (!response.ok) {
         if (response.status === 410) failedCursor.current = null;
         const wait = Number(response.headers.get("Retry-After"));
@@ -47,7 +48,7 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
       if (!controller.signal.aborted) setPage(previous => cursor && previous ? { ...result, results: [...previous.results, ...result.results] } : result);
     } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "검색을 완료하지 못했습니다."); }
     finally { if (!controller.signal.aborted) setBusy(false); }
-  }, [query, source, format, from, to, semantic, actions, today, tab]);
+  }, [query, source, format, from, to, semantic, includePromotional, promotionalEnabled, actions, today, tab]);
   useEffect(() => { const refresh = () => { void run(); }; window.addEventListener("ai-hub:actions-changed", refresh); return () => window.removeEventListener("ai-hub:actions-changed", refresh); }, [run]);
   useEffect(() => {
     abort.current?.abort(); let active = true;
@@ -59,6 +60,7 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
   const visible = (page?.results ?? []).filter(r => !actions || r.kind === "action").filter(r => r.kind !== "action" || tab === "all" || (tab === "review" ? r.deadlineStatus === "needs_review" || r.type === "check" : tab === "completed" ? r.status === "completed" : r.type === tab));
   const sorted = today ? [...visible].sort((a, b) => a.kind === "action" && b.kind === "action" ? (a.deadlineStatus === "confirmed" ? a.deadlineDate ?? a.deadlineAt ?? "9999" : "9999").localeCompare(b.deadlineStatus === "confirmed" ? b.deadlineDate ?? b.deadlineAt ?? "9999" : "9999") : 0) : visible;
   return <div className="space-y-6">
+    {!actions && promotionalEnabled && <label className="flex min-h-9 items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={includePromotional} onChange={e => { failedCursor.current = null; setIncludePromotional(e.target.checked); }}/>광고 포함</label>}
     {!actions && query.trim() && <>
       <section className="flex items-center gap-3 border-b border-slate-200/60 pb-5 sm:gap-5"><Link href="/" className="flex shrink-0 items-center gap-1 text-xs text-slate-500 hover:text-[#557bb9]" aria-label="홈으로 돌아가기"><ArrowLeft className="size-4" aria-hidden="true"/><span className="hidden sm:inline">뒤로</span></Link><form onSubmit={event => { event.preventDefault(); if (Date.now() >= retryAt) void run(); }} className="flex min-w-0 flex-1 items-center gap-3 rounded-full border border-slate-200/70 bg-white/90 py-2 pl-4 pr-2 shadow-[0_5px_25px_-15px_#8b9dbc]"><label className="flex min-w-0 flex-1 items-center gap-3"><Search className="size-4 shrink-0 text-[#8b9dbc]" aria-hidden="true"/><span className="sr-only">통합 검색어</span><input className="min-h-9 min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-slate-400 sm:text-base" value={query} maxLength={500} onChange={event => { const value = event.target.value; setQuery(value); if (!value.trim()) router.replace("/"); }} placeholder="내 자료에서 무엇이든 찾아보세요" /></label><button className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#7894c2] text-white transition-colors hover:bg-[#6282b5] disabled:opacity-40" aria-label="검색" disabled={busy || !query.trim() || retryAt > 0}><ArrowRight className="size-4" aria-hidden="true"/></button></form></section>
       <div className="flex flex-wrap gap-2" role="group" aria-label="검색 출처 필터">{[["", "전체"], ...workspaceSources.map(entry => [entry.value, entry.label])].map(([value, label]) => <button key={value} aria-label={label} onClick={() => setSource(value)} aria-pressed={source === value} className={`flex min-h-9 items-center gap-2 rounded-full border px-3 py-1 text-xs ${source === value ? "border-[#cfddf6] bg-[#eaf1ff] text-[#4c71ad]" : "border-slate-200/70 bg-white/80 text-slate-500 hover:bg-white"}`}>{value && <SourceBadge source={value} iconOnly/>}{label}</button>)}</div>

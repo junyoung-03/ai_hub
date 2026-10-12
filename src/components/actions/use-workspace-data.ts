@@ -79,7 +79,8 @@ export function useScheduleItems(enabled = true) {
     async function run() {
       setBusy(true); setError("");
       try {
-        const params = new URLSearchParams({limit:"100"}); if(requestCursor)params.set("cursor",requestCursor);
+        // Schedule data is protected even when the owner marks its source promotional.
+        const params = new URLSearchParams({limit:"100",includePromotional:"true"}); if(requestCursor)params.set("cursor",requestCursor);
         const page = await readJson<ItemList>(`/api/v1/items?${params}`,controller.signal);
         if (!controller.signal.aborted) { setItems(previous=>requestCursor ? [...previous,...page.items] : page.items);setCursor(page.nextCursor); }
       } catch (failure) { if(!controller.signal.aborted)setError(failure instanceof Error ? failure.message : "일정을 불러오지 못했습니다."); }

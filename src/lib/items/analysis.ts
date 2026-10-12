@@ -1,4 +1,5 @@
 import "server-only";
+import { promotionalReady, missingPromotionalContract } from "@/lib/items/promotional-gate";
 import { analysisEligible, analysisFingerprint } from "@/lib/items/analysis-policy";
 export { analysisFingerprint } from "@/lib/items/analysis-policy";
 import { analyzeGmailText, getGeminiConfig, GeminiAnalysisError } from "@/lib/gemini/client";
@@ -21,14 +22,25 @@ type PersistenceInput = { userId: string; itemId: string; contentText: string;
 
 /** Entire RPC is the retry unit. Never retry only an Action/Evidence statement. */
 export async function persistValidatedAnalysis(admin: ReturnType<typeof createAdminClient>, input: PersistenceInput) {
-  const result = validateAnalysis(input.result, input.contentText, input.dateContext);
+  let result = validateAnalysis(input.result, input.contentText, input.dateContext);
+  const legacy = () => {
+    const { noiseAssessment: _noise, ...rest } = result;
+    void _noise;
+    return validateAnalysis({ ...rest, schemaVersion: "0.2" }, input.contentText, input.dateContext);
+  };
+  if (result.schemaVersion === "0.3" && !await promotionalReady()) result = legacy();
+  let fingerprint = result.schemaVersion === input.result.schemaVersion ? input.fingerprint
+    : analysisFingerprint(input.contentText, input.model, "0.2");
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data, error } = await admin.rpc(input.eligibleSource ? "persist_eligible_item_analysis" : "persist_gmail_item_analysis", {
       p_user_id: input.userId, p_item_id: input.itemId, p_content_text: input.contentText,
       p_content_hash: input.contentHash, p_analysis: result as unknown as Json,
-      p_model: input.model, p_input_fingerprint: input.fingerprint,
+      p_model: input.model, p_input_fingerprint: fingerprint,
     });
     if (error) {
+      if (result.schemaVersion === "0.3" && missingPromotionalContract(error) && attempt < 2) {
+        result = legacy(); fingerprint = analysisFingerprint(input.contentText, input.model, "0.2"); continue;
+      }
       if (["40P01", "40001"].includes(error.code) && attempt < 2) continue;
       throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
     }
@@ -59,10 +71,11 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (!item.content_text?.trim() || item.content_text.length > 200_000) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   const { model } = getGeminiConfig();
   const dateContext = analysisDateContext(item);
-  const fingerprint = analysisFingerprint(item.content_text, model);
+  const schemaVersion = await promotionalReady() ? "0.3" : "0.2";
+  const fingerprint = analysisFingerprint(item.content_text, model, schemaVersion);
   const artifact = record(record(item.metadata)?.aiAnalysis);
   let resolvedCached: ItemAnalysis | undefined;
-  if (artifact?.inputFingerprint === fingerprint && artifact?.model === model && artifact?.schemaVersion === "0.2") {
+  if (artifact?.inputFingerprint === fingerprint && artifact?.model === model && artifact?.schemaVersion === schemaVersion) {
     const cached = validateAnalysis(artifact.result, item.content_text, dateContext);
     const previous = artifact.result as unknown as ItemAnalysis;
     const observed = [...cached.eventObservations, ...cached.actions.flatMap(action => [action.startObservation, action.deadlineObservation])];
@@ -88,7 +101,7 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (claimError) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
   if (!claim) throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
   try {
-    const result = resolvedCached ?? await analyzeGmailText(item.content_text, existingTopics, dateContext);
+    const result = resolvedCached ?? await analyzeGmailText(item.content_text, existingTopics, dateContext, schemaVersion);
     return await persistValidatedAnalysis(admin, { userId: user.id, itemId, contentText: item.content_text,
       contentHash: item.content_hash, result, model, fingerprint, eligibleSource: item.source !== "gmail", dateContext });
   } catch (failure) {

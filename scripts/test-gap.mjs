@@ -65,7 +65,7 @@ test('AI source eligibility accepts Gmail/Drive/manual/complete Upload, excludes
  for(const v of [sourceItem('calendar','calendar_event'),sourceItem('upload','image'),sourceItem('drive','pdf'),{...sourceItem('gmail','email'),content_text:''}])assert.equal(policy.analysisEligible(v),false);
 });
 test('AI unchanged analysed skips; changed canonical text/model reanalyses, override does not affect fingerprint',()=>{
- const model='gemini-fixture',item=sourceItem('drive','document',{aiAnalysis:{schemaVersion:'0.2',model,inputFingerprint:policy.analysisFingerprint(content,model)},user_primary_topic:'override'});
+ const model='gemini-fixture',item=sourceItem('drive','document',{aiAnalysis:{schemaVersion:'0.2',model,inputFingerprint:policy.analysisFingerprint(content,model,"0.2")},user_primary_topic:'override'});
  assert.equal(policy.analysisCurrent(item,model),true);assert.equal(policy.analysisCurrent({...item,content_text:content+' changed'},model),false);assert.equal(policy.analysisCurrent(item,'gemini-other'),false);
 });
 test('bounded orchestration isolates provider failures, continues other ITEMs, no retry/backfill',async()=>{
@@ -73,7 +73,7 @@ test('bounded orchestration isolates provider failures, continues other ITEMs, n
  const r=await b.runBoundedAnalysis(['a','b','c','d','a'],m=>messages.push(m));assert.equal(calls.length,3);assert.equal(r.complete,2);assert.equal(r.failed,1);assert.equal(r.pending,1);assert.ok(messages.at(-1).includes('자료는 저장되어 있습니다'));
 });
 test('analysis on already analysed ITEM does not invoke Gemini or privileged writes',async()=>{
- const validator=load('src/lib/gemini/validation.ts'),model='gemini-fixture';const item={id,...sourceItem('drive','document',{aiAnalysis:{schemaVersion:'0.2',model,inputFingerprint:policy.analysisFingerprint(content,model),result:validator.validateAnalysis(fixture(),content)}}),processing_status:'indexing'};
+ const validator=load('src/lib/gemini/validation.ts'),model='gemini-fixture';const item={id,...sourceItem('drive','document',{aiAnalysis:{schemaVersion:'0.2',model,inputFingerprint:policy.analysisFingerprint(content,model,'0.2'),result:validator.validateAnalysis(fixture(),content)}}),processing_status:'indexing'};
  const q={select(){return q;},eq(){return q;},async maybeSingle(){return {data:item};}};
  const a=load('src/lib/items/analysis.ts',{'@/lib/items/analysis-policy':policy,'@/lib/gemini/validation':validator,'@/lib/gemini/client':{GeminiAnalysisError:class extends Error{},getGeminiConfig:()=>({model}),analyzeGmailText:()=>{throw new Error('Should not call');}},'@/lib/items/filters':filters,'@/lib/supabase/auth':{requireUser:async()=>({id:'owner'})},'@/lib/supabase/server':{createClient:async()=>({from:()=>q})},'@/lib/supabase/admin':{createAdminClient:()=>{throw new Error('Should not write');}}});
  assert.equal((await a.analyzeOwnedItem(id)).cached,true);

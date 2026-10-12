@@ -1,4 +1,5 @@
 import "server-only";
+import { promotionalReady, missingPromotionalContract } from "@/lib/items/promotional-gate";
 import { calendarDetail } from "@/lib/google/calendar-contract";
 import { uploadDetail } from "@/lib/uploads/contract";
 
@@ -32,6 +33,10 @@ async function readRelatedPages<T extends { id: string }>(fetchPage: (after?: st
 }
 
 export async function listItems(input: ItemQuery) {
+  return readItems(input, false);
+}
+type ListedItem = { id: string; title: string; source: import("@/types/database").Enums<"item_source">; format: import("@/types/database").Enums<"item_format">; processingStatus: import("@/types/database").Enums<"processing_status">; createdAt: string; sourceCreatedAt: string | null; classification: ReturnType<typeof effectiveClassification> };
+async function readItems(input: ItemQuery, forceLegacy: boolean): Promise<{ items: ListedItem[]; nextCursor: string | null }> {
   const user = await requireUser();
   const supabase = await createClient();
   const { filters, limit, position } = input;
@@ -41,6 +46,9 @@ export async function listItems(input: ItemQuery) {
     ? `${itemColumns},classification:classifications!classifications_item_user_fk!inner(${classificationColumns})` as const
     : `${itemColumns},classification:classifications!classifications_item_user_fk(${classificationColumns})` as const;
   let query = supabase.from("items").select(select).eq("user_id", user.id);
+  // PostgREST computed field: shared DB policy, applied before keyset/limit.
+  const promotional = !forceLegacy && !filters.includePromotional && await promotionalReady();
+  if (promotional) query = query.filter("item_is_visible", "eq", true);
   if (filters.source) query = query.eq("source", filters.source);
   if (filters.format) query = query.eq("format", filters.format);
   if (filters.processingStatus) query = query.eq("processing_status", filters.processingStatus);
@@ -65,6 +73,7 @@ export async function listItems(input: ItemQuery) {
     query = query.or(`created_at.lt.${time},and(created_at.eq.${time},id.lt.${position.id})`);
   }
   const { data, error } = await query.order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
+  if (promotional && missingPromotionalContract(error)) return readItems(input, true);
   if (error || !data) throw new ItemReadError();
   const items = data.slice(0, limit).map((row) => ({
     id: row.id, title: row.title, source: row.source, format: row.format,
@@ -80,7 +89,7 @@ function storedAnalysis(metadata: Json, contentText: string | null, context?: An
   const empty = { aiAnalysis: null, eventObservations: [] };
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata) || contentText === null) return empty;
   const artifact = metadata.aiAnalysis;
-  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact) || artifact.schemaVersion !== "0.2"
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact) || !["0.2", "0.3"].includes(String(artifact.schemaVersion))
     || typeof artifact.analyzedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:\d{2})$/.test(artifact.analyzedAt)
     || !Number.isFinite(Date.parse(artifact.analyzedAt))) return empty;
   try {
@@ -93,7 +102,7 @@ function storedAnalysis(metadata: Json, contentText: string | null, context?: An
         datetime: null, rawText: event.rawText, evidence: event.evidence }];
       return [];
     });
-    return { aiAnalysis: { schemaVersion: "0.2", analyzedAt: artifact.analyzedAt }, eventObservations };
+    return { aiAnalysis: { schemaVersion: result.schemaVersion, analyzedAt: artifact.analyzedAt }, eventObservations };
   } catch {
     // Missing, obsolete, malformed or unsupported-by-current-source artifacts are optional.
     return empty;

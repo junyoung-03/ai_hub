@@ -13,8 +13,9 @@ export function uiLoader(injections = {}) {
     const exports = {};
     cache.set(file, exports);
     const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
-    runInNewContext(code, { exports, URL, URLSearchParams, Buffer, Date, Intl, structuredClone, process, require(name) {
+    runInNewContext(code, { exports, URL, URLSearchParams, Buffer, Date, Intl, Response, Request, Headers, structuredClone, process, require(name) {
       if (name in injections) return injections[name];
+      if (name === "@/lib/items/promotional-gate") return { promotionalReady: async () => false, missingPromotionalContract: error => ["42P01","42703","42883","PGRST202","PGRST204","PGRST205"].includes(error?.code) };
       if (name === "server-only") return {};
       if (name === "next/link") return { __esModule: true, default: ({ children, href, ...props }) => require("react").createElement("a", { href, ...props }, children) };
       if (name === "next/navigation") return { useRouter: () => ({ refresh() {} }), usePathname: () => "/library" };

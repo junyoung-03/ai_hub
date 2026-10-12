@@ -10,7 +10,7 @@ export class SearchError extends Error {
 export const record = (v: unknown): Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 export const hash = (v: string) => createHash("sha256").update(v).digest("hex");
 export const uuid = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
-export type SearchInput = { query: string; filters: { source: string[]; format: string[]; from: string | null; to: string | null };
+export type SearchInput = { query: string; filters: { source: string[]; format: string[]; from: string | null; to: string | null; includePromotional?: boolean };
   limit: number; semantic: boolean; cursor: string | null };
 const sources = ["gmail", "drive", "calendar", "upload", "manual"];
 const formats = ["email", "pdf", "image", "screenshot", "document", "text", "calendar_event", "other"];
@@ -28,7 +28,8 @@ export function parseSearch(v: unknown): SearchInput {
   const r = record(v), f = record(r.filters);
   if (Object.keys(r).some(k => !["query", "filters", "limit", "semantic", "cursor"].includes(k))
     || (r.filters !== undefined && (r.filters === null || Array.isArray(r.filters) || typeof r.filters !== "object"))
-    || Object.keys(f).some(k => !["source", "format", "from", "to"].includes(k))
+    || Object.keys(f).some(k => !["source", "format", "from", "to", "includePromotional"].includes(k))
+    || (f.includePromotional !== undefined && typeof f.includePromotional !== "boolean")
     || typeof r.query !== "string" || !r.query.trim() || Array.from(r.query.trim()).length > 500
     || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(r.query)
     || (r.semantic !== undefined && typeof r.semantic !== "boolean")
@@ -37,7 +38,7 @@ export function parseSearch(v: unknown): SearchInput {
   if (!Number.isInteger(limit) || Number(limit) < 1 || Number(limit) > 50) throw new SearchError("VALIDATION_ERROR");
   const from = date(f.from), to = date(f.to);
   if (from && to && from > to) throw new SearchError("VALIDATION_ERROR");
-  return { query: r.query.trim().normalize("NFC"), filters: { source: list(f.source, sources), format: list(f.format, formats), from, to },
+  return { query: r.query.trim().normalize("NFC"), filters: { source: list(f.source, sources), format: list(f.format, formats), from, to, ...(f.includePromotional ? { includePromotional: true } : {}) },
     limit: Number(limit), semantic: r.semantic === true, cursor: typeof r.cursor === "string" ? r.cursor : null };
 }
 export type Intent = { kind: "documents" | "actions"; from: string | null; to: string | null; term: string; deadlineOnly: boolean; warning: string | null };
@@ -66,7 +67,10 @@ export function searchIntent(query: string, now = Date.now()): Intent {
     warning: bareMonth ? "YEAR_REQUIRED" : !action && /마감|제출|까지/.test(q) ? "DEADLINE_FILTER_NOT_APPLIED" : null };
 }
 export function fingerprint(title: string, text: string, version = ACTIVE_EMBEDDING.version) { return hash(JSON.stringify([version, title, text])); }
-export function cursorContext(input: SearchInput) { return hash(JSON.stringify([input.query, input.filters, input.limit, input.semantic, ACTIVE_EMBEDDING.version])); }
+export function cursorContext(input: SearchInput, promotional = false) {
+  const values = [input.query, input.filters, input.limit, input.semantic, ACTIVE_EMBEDDING.version];
+  return hash(JSON.stringify(promotional ? ["noise-v1", ...values] : values));
+}
 type Cursor = { session: string; offset: number; limit: number; context: string; version: string; expires: number };
 function secret() { const key = process.env.SEARCH_CURSOR_SECRET?.trim(); if (!key || key.length < 32) throw new SearchError("SEARCH_NOT_CONFIGURED", 503); return key; }
 export function encodeCursor(cursor: Cursor): string { const body = Buffer.from(JSON.stringify(cursor)).toString("base64url"); return `${body}.${createHmac("sha256", secret()).update(body).digest("base64url")}`; }

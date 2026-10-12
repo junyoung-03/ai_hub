@@ -1,3 +1,4 @@
+import { promotionalReady } from "@/lib/items/promotional-gate";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/shell/app-shell";
@@ -9,6 +10,7 @@ import { deadlineLabel } from "@/components/search/search-results";
 import { requirePageUser } from "@/lib/supabase/auth";
 import { getItemDetail, type ItemDetail } from "@/lib/items/queries";
 import { formatTimestamp, locatorLabels } from "@/lib/items/presentation";
+import { NoiseControls } from "@/components/items/noise-controls";
 
 export default async function ItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   await requirePageUser();
@@ -31,6 +33,7 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
   </section>;
 
   const insightPane = <aside className="min-w-0 space-y-5 rounded-xl border border-line bg-surface p-5 lg:sticky lg:top-20" aria-labelledby="analysis-title">
+    {await promotionalReady() && <NoiseControls itemId={item.id}/>}
     <div><p className="mb-1 text-xs font-medium tracking-[0.08em] text-faint">AI INSIGHT</p><h2 id="analysis-title">분석과 할 일</h2>{data.aiAnalysis ? <p className="meta mt-2">분석 완료 · {formatTimestamp(data.aiAnalysis.analyzedAt)}</p> : <p role="status" className="mt-2 text-sm text-muted-foreground">검증된 AI 분석 결과가 아직 없습니다.</p>}</div>
     <section className="insight-section" aria-labelledby="actions-title"><h3 id="actions-title">해야 할 일 <span className="text-sm font-normal text-muted-foreground">{actions.length}개</span></h3>
       {!actions.length && <p className="text-muted-foreground">원문에서 확인된 할 일이 없습니다.</p>}

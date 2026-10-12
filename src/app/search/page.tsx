@@ -1,3 +1,4 @@
+import { promotionalReady } from "@/lib/items/promotional-gate";
 import { AppShell } from "@/components/shell/app-shell";
 import { SearchWorkspace } from "@/components/search/search-workspace";
 import { getWorkspaceClock } from "@/components/workspace/request-clock";
@@ -8,5 +9,5 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const initialQuery = typeof q === "string" ? q.trim().slice(0, 500) : "";
   if (!initialQuery) return <EmptySearchRedirect />;
   const initialNow = await getWorkspaceClock();
-  return <AppShell title="검색" hideTitle demo><SearchWorkspace key={initialQuery} initialQuery={initialQuery} initialNow={initialNow} /></AppShell>;
+  return <AppShell title="검색" hideTitle demo><SearchWorkspace key={initialQuery} initialQuery={initialQuery} initialNow={initialNow} promotionalEnabled={await promotionalReady()} /></AppShell>;
 }

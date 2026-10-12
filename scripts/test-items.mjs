@@ -20,6 +20,7 @@ function load(path, dependencies = {}) {
     require(name) {
       if (name === "server-only") return {};
       if (name in dependencies) return dependencies[name];
+      if (name === "@/lib/items/promotional-gate") return { promotionalReady: async () => false };
       if (name === "@/lib/gemini/date-context") return loadAnalysisModule("src/lib/gemini/date-context.ts");
       if (name === "@/lib/uploads/ocr-contract") return load("src/lib/uploads/ocr-contract.ts");
       if (name === "node:crypto") return crypto;

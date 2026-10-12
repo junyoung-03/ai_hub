@@ -119,10 +119,10 @@ test("Gemini transport receives source/date context and server resolves yearless
     fetch: async (_url, request) => {
       const payload = JSON.parse(JSON.parse(request.body).contents[0].parts[0].text);
       assert.deepEqual(payload.dateContext, plain(context));
-      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify(cases[0].output) }] } }] });
+      return Response.json({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({...cases[0].output,schemaVersion:'0.3',noiseAssessment:{verdict:'normal',confidence:null,evidence:[],reasons:['non_promotional'],protectionSignals:[]}}) }] } }] });
     },
   });
-  const output = await gemini.analyzeGmailText(cases[0].text, [], context);
+  const output = await gemini.analyzeGmailText(cases[0].text, [], context, "0.3");
   const analysis = load("src/lib/items/analysis.ts", { "@/lib/gemini/validation": validator, "@/lib/gemini/client": gemini, "@/lib/items/filters": {}, "@/lib/supabase/auth": {}, "@/lib/supabase/server": {}, "@/lib/supabase/admin": {} });
   let calls = 0;
   await analysis.persistValidatedAnalysis({ rpc: async (name, args) => {
@@ -185,7 +185,7 @@ test("explicit reanalysis upgrades a cached yearless Manual result through its c
   const model = "gemini-fixture";
   const policy = load("src/lib/items/analysis-policy.ts");
   const old = validator.validateAnalysis(cases[0].output, cases[0].text);
-  const item = { id: "11111111-1111-4111-8111-111111111111", ...reference, format: "text", content_text: cases[0].text, content_hash: null, processing_status: "indexing", updated_at: "old", metadata: { aiAnalysis: { schemaVersion: "0.2", model, inputFingerprint: policy.analysisFingerprint(cases[0].text, model), result: old } } };
+  const item = { id: "11111111-1111-4111-8111-111111111111", ...reference, format: "text", content_text: cases[0].text, content_hash: null, processing_status: "indexing", updated_at: "old", metadata: { aiAnalysis: { schemaVersion: "0.2", model, inputFingerprint: policy.analysisFingerprint(cases[0].text, model, "0.2"), result: old } } };
   const read = { select() { return read; }, eq() { return read; }, maybeSingle: async () => ({ data: item }), limit: async () => ({ data: [] }) };
   let claims = 0, writes = 0;
   const admin = { from() {

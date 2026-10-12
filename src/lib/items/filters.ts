@@ -8,6 +8,7 @@ export class InvalidItemQueryError extends Error {
 }
 
 export type ItemFilters = {
+  includePromotional?: "true";
   source?: Enums<"item_source">;
   format?: Enums<"item_format">;
   topic?: string;
@@ -32,11 +33,14 @@ function enumValue<T extends string>(value: string, values: readonly T[]): T {
 }
 
 export function parseItemQuery(params: URLSearchParams): ItemQuery {
-  const allowed = ["source", "format", "topic", "documentType", "processingStatus", "from", "to", "cursor", "limit"];
+  const allowed = ["source", "format", "topic", "documentType", "processingStatus", "from", "to", "cursor", "limit", "includePromotional"];
   for (const key of params.keys()) {
     if (!allowed.includes(key) || params.getAll(key).length !== 1) throw new InvalidItemQueryError();
   }
   const filters: ItemFilters = {};
+  const promotional = params.get("includePromotional");
+  if (promotional !== null && !["true", "false"].includes(promotional)) throw new InvalidItemQueryError();
+  if (promotional === "true") filters.includePromotional = "true";
   const enums = Constants.public.Enums;
   const source = params.get("source");
   const format = params.get("format");

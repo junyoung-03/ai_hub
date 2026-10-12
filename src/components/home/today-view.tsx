@@ -1,3 +1,4 @@
+import { promotionalReady } from "@/lib/items/promotional-gate";
 import { getWorkspaceClock } from "@/components/workspace/request-clock";
 import Link from "next/link";
 import { ArrowRight, Search } from "lucide-react";
@@ -11,10 +12,12 @@ import { getCurrentUser } from "@/lib/supabase/auth";
 import { getGoogleConnectionSummary } from "@/lib/google/connections";
 import { formatRelativeTime, formatLabels } from "@/lib/items/presentation";
 
-export async function TodayView() {
+export async function TodayView({ includePromotional = false }: { includePromotional?: boolean } = {}) {
+  const promotionalEnabled = await promotionalReady();
+  includePromotional = promotionalEnabled && includePromotional;
   const user = await getCurrentUser().catch(() => null);
   const [recent, connection] = await Promise.all([
-    listItems(parseItemQuery(new URLSearchParams("limit=3"))).catch(() => null),
+    listItems(parseItemQuery(new URLSearchParams(`limit=3${includePromotional ? "&includePromotional=true" : ""}`))).catch(() => null),
     user ? getGoogleConnectionSummary(user.id).catch(() => null) : Promise.resolve(null),
   ]);
   const now=await getWorkspaceClock();
@@ -29,7 +32,7 @@ export async function TodayView() {
       <div className="mt-5 flex flex-wrap justify-center gap-2">{workspaceSources.map(({value,label,Icon,color})=><Link key={value} href={value==="upload"?"/library#upload":value==="manual"?"/library#manual-text":`/library?source=${value}`} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200/70 bg-white/85 px-4 text-xs text-slate-600 transition-colors hover:border-[#c5d4eb]"><Icon className={`size-4 ${color}`} aria-hidden="true"/>{label}</Link>)}</div>
     </section>
     <ScheduleWorkspace today={dayInSeoul(now)} now={now} home/>
-    <section className="mt-10"><div className="mb-4 flex items-center justify-between"><div><h2 className="text-lg font-semibold text-slate-800">최근 추가된 자료</h2><p className="mt-1 text-xs text-slate-400">새로 모인 정보부터 가볍게 살펴보세요.</p></div><Link href="/library" className="inline-flex items-center gap-1 text-xs text-[#6d88b0]">자료 전체<ArrowRight className="size-3.5"/></Link></div>
+    <section className="mt-10">{promotionalEnabled && <Link href={includePromotional ? "/" : "/?includePromotional=true"} role="switch" aria-checked={includePromotional} className="mb-3 inline-flex min-h-9 items-center text-xs text-slate-600">광고 포함 {includePromotional ? "켜짐" : "꺼짐"}</Link>}<div className="mb-4 flex items-center justify-between"><div><h2 className="text-lg font-semibold text-slate-800">최근 추가된 자료</h2><p className="mt-1 text-xs text-slate-400">새로 모인 정보부터 가볍게 살펴보세요.</p></div><Link href="/library" className="inline-flex items-center gap-1 text-xs text-[#6d88b0]">자료 전체<ArrowRight className="size-3.5"/></Link></div>
       {recent?recent.items.length?<ul className="grid gap-3 sm:grid-cols-3">{recent.items.map(item=><li key={item.id}><Link href={`/items/${item.id}`} className="flex h-full min-w-0 flex-col rounded-2xl border border-slate-200/70 bg-white/85 p-4 transition-colors hover:border-[#c5d4eb]"><SourceBadge source={item.source}/><h3 className="mt-3 line-clamp-2 break-words text-sm font-semibold leading-6 text-slate-700">{item.title}</h3><p className="mt-1 text-xs text-slate-400">{item.classification.primaryTopic??formatLabels[item.format]}</p><p className="mt-auto pt-3 text-[11px] text-slate-400">{formatRelativeTime(item.createdAt)}</p></Link></li>)}</ul>:<p className="rounded-2xl border border-slate-200/60 bg-white/60 p-6 text-sm text-slate-400">아직 자료가 없습니다. Google을 연결하거나 파일·메모를 추가해 주세요.</p>:<p role="alert" className="text-sm text-red-500">최근 자료를 불러오지 못했습니다. <Link href="/" className="underline">다시 불러오기</Link></p>}
     </section>
   </AppShell>;

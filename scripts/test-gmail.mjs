@@ -213,7 +213,7 @@ function collectionHarness({ status = "connected", foreign = false, failMessage 
 test("Gmail committed collection offers only current-run unanalysed IDs; analysed skips and discovery failure keeps success", async () => {
   const h = collectionHarness(), p = load("src/lib/items/analysis-policy.ts");
   const first = await h.collection.collectInitialGmail(); assert.equal(first.analysisItemIds.length, 2);
-  for (const item of h.items) item.metadata.aiAnalysis = { schemaVersion: "0.2", model: "gemini-fixture", inputFingerprint: p.analysisFingerprint(item.content_text, "gemini-fixture") };
+  for (const item of h.items) item.metadata.aiAnalysis = { schemaVersion: "0.2", model: "gemini-fixture", inputFingerprint: p.analysisFingerprint(item.content_text, "gemini-fixture", "0.2") };
   assert.equal((await h.collection.collectInitialGmail()).analysisItemIds.length, 0);
   const failed = await collectionHarness({ candidateFailure: true }).collection.collectInitialGmail();
   assert.equal(failed.complete, true); assert.equal(failed.analysisDiscoveryFailed, true); assert.equal(failed.created_count, 2);
