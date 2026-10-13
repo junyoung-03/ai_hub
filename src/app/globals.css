@@ -263,7 +263,7 @@ body:has(.home-reference-shell) { background: #f4f8ff; }
   background: rgba(244, 248, 255, .62);
 }
 .home-shell main { position: relative; z-index: 1; }
-.home-reference-shell main { z-index: 2; background: transparent; }
+.home-reference-shell main { position: relative; z-index: 2; background: transparent; }
 .home-shell main > div { max-width: 1600px; padding-top: 26px; }
 .home-search { margin: 0 44px 12px; max-width: 1000px; }
 .home-search h1 { font-size: 34px; line-height: 1.2; color: #0f172a; }
