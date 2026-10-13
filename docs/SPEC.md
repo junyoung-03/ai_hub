@@ -1461,7 +1461,7 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - Home은 오늘 제목·설명 → 기존 검색·실행 가능한 예시 chip → 큰 월간 Calendar(약 79%) + 오늘 할 일·다가오는 일정(약 21%)이다. 최근 자료 및 광고 토글은 Library에서 관리한다.
 - Calendar cell은 제목과 작은 dot만 표시하며 시간은 숨긴다. 오늘은 파란 원, 선택 날짜는 연한 blue border/background로 표시한다.
 - 오늘 할 일은 오늘 확정 날짜의 미완료 Action만 표시한다. checkbox·상태 탭·우측 추가 버튼을 제거하고 제목·dot·근거 있는 시간을 표시한다. 상태 관리는 /actions에서 한다.
-- 다가오는 일정은 미래 Event의 실제 시작·종료 시각을 표시한다. 종료 시각이 없으면 시작만, Google 종일 일정은 종일, 시각이 없는 AI Event는 시간 미정으로 표시한다. 시간을 추측하지 않는다.
+- 다가오는 일정은 미래 Event와 미완료 확정 날짜 Action을 함께 날짜·시간순 최대 5개 표시한다(2026-10-13 사용자 요청으로 직접 추가 할 일 누락 수정). 오늘 Action은 오늘 할 일에서 표시한다. 기존 Action/Event ID와 저장 구조를 유지하며 완료·삭제한 Action은 제외한다. Event는 실제 시작·종료 시각, Action은 입력된 시각을 표시한다. 종료 시각이 없으면 시작만, Google 종일 일정은 종일, 시각이 없는 항목은 시간 미정으로 표시한다. 시간을 추측하지 않는다. Action/Event 조회가 따로 완료돼도 먼저 받은 목록은 표시한다.
 - Calendar Header의 단일 추가 버튼은 월·일·시간·제목 네 필드의 Quick Todo를 연다. 기존 직접 Action POST를 사용하고 Upload/Manual Text/Gemini/Event를 호출하지 않는다. 동일 actionId를 Calendar와 오늘 할 일에서 공유한다.
 - Quick Todo는 body portal의 viewport 전체 rgba(15,23,42,.18)/5px blur overlay와 400px white memo다. 큰 회색 배경 panel은 두지 않는다.
 - 검색 예시는 기존 parser의 이번 주 할 일 / 오늘 할 일과 계약 / 회의 키워드다. 특정 월일·최근 업로드 자연문 처리를 지원한다고 표시하지 않는다.

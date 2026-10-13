@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { SearchActionResult } from "@/types/search-ui";
 import { actionDay, shortDate, type ScheduleEvent } from "@/components/actions/schedule-model";
+import { upcomingEntries } from "./upcoming-model";
 
 function clock(value?: string | null) {
   if (!value || !Number.isFinite(Date.parse(value))) return "";
@@ -23,7 +24,7 @@ export function TodayTodoList({ today, actions, events, eventEnds, busy, schedul
   scheduleError: string;
 }) {
   const todayActions = actions.filter(action => actionDay(action) === today && action.status === "open");
-  const upcoming = events.filter(event => event.date > today).slice(0, 5);
+  const upcoming = upcomingEntries(today, busy || error ? [] : actions, scheduleBusy || scheduleError ? [] : events);
 
   return (
     <aside aria-label="오늘 할 일 및 다가오는 일정" className="home-agenda flex flex-col gap-4">
@@ -52,7 +53,9 @@ export function TodayTodoList({ today, actions, events, eventEnds, busy, schedul
           <Link href="/actions" className="inline-flex shrink-0 items-center gap-1 text-[13px] font-medium text-blue-600 hover:underline">전체 보기 <ArrowRight className="size-3.5" /></Link>
         </div>
         {scheduleError && <p role="alert" className="py-3 text-sm text-red-600">{scheduleError}</p>}
-        {scheduleBusy ? <p role="status" className="py-5 text-sm text-slate-500">일정을 불러오는 중…</p> : (
+        {error && <p role="alert" className="py-3 text-sm text-red-600">{error}</p>}
+        {(busy || scheduleBusy) && <p role="status" className="py-5 text-sm text-slate-500">일정을 불러오는 중…</p>}
+        {(
           <ul className="divide-y divide-blue-50">
             {upcoming.map(event => (
               <li key={event.id} className="flex items-center gap-3 py-2.5">
@@ -60,14 +63,14 @@ export function TodayTodoList({ today, actions, events, eventEnds, busy, schedul
                   <span>{event.date.slice(5).replace("-", ". ")}</span>
                   <span className="text-xs text-slate-500">({new Intl.DateTimeFormat("ko-KR", { weekday: "short", timeZone: "Asia/Seoul" }).format(new Date(`${event.date}T00:00:00+09:00`))})</span>
                 </time>
-                <span aria-hidden="true" className={`mb-5 size-2 shrink-0 rounded-full ${event.kind === "calendar" ? "bg-blue-600" : "bg-purple-600"}`} />
+                <span aria-hidden="true" className={`mb-5 size-2 shrink-0 rounded-full ${event.kind === "deadline" ? "bg-emerald-600" : event.kind === "calendar" ? "bg-blue-600" : "bg-purple-600"}`} />
                 <div className="min-w-0">
-                  <Link href={`/items/${event.itemId}`} className="block truncate text-sm font-semibold text-slate-900 hover:text-blue-600" title={event.title}>{event.title}</Link>
+                  <Link href={event.href} className="block truncate text-sm font-semibold text-slate-900 hover:text-blue-600" title={event.title}>{event.title}</Link>
                   <p className="text-[13px] tabular-nums text-slate-500">{clock(event.time) ? `${clock(event.time)}${clock(eventEnds[event.id]) ? ` - ${clock(eventEnds[event.id])}` : ""}` : event.kind === "calendar" ? "종일" : "시간 미정"}</p>
                 </div>
               </li>
             ))}
-            {!upcoming.length && !scheduleError && <li className="py-8 text-sm text-slate-500">다가오는 일정이 없습니다.</li>}
+            {!upcoming.length && !busy && !scheduleBusy && !error && !scheduleError && <li className="py-8 text-sm text-slate-500">다가오는 일정이 없습니다.</li>}
           </ul>
         )}
       </section>

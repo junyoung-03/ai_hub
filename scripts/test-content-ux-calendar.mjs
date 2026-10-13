@@ -217,7 +217,8 @@ test("Home agenda shows only today's open actions and preserves evidenced event 
   const props = { today: "2026-10-13", busy: false, error: "", scheduleError: "", eventEnds: { [event.id]: "2026-10-14T12:00:00+09:00" }, events: [event], actions: [action, { ...action, actionId: "undated", title: "날짜 미정 작업", deadlineDate: null, deadlineAt: null }, { ...action, actionId: "done", title: "완료 작업", status: "completed" }, { ...action, actionId: "tomorrow", title: "내일 작업", deadlineDate: "2026-10-14", deadlineAt: null }] };
   const html = render(ui("src/components/home/today-todo-list.tsx").TodayTodoList, props);
   assert.match(html, /오늘 제출/); assert.match(html, /15:30/); assert.match(html, /10:00 - 12:00/);
-  assert.doesNotMatch(html, /날짜 미정 작업|완료 작업|내일 작업|checkbox|진행중|할 일 추가/);
+  assert.match(html, /내일 작업/);
+  assert.doesNotMatch(html, /날짜 미정 작업|완료 작업|checkbox|진행중|할 일 추가/);
   const calendar = render(ui("src/components/home/today-calendar.tsx").TodayCalendar, { today: props.today, actions: [action], events: [event], busy: false });
   assert.match(calendar, /오늘 제출/); assert.match(calendar, /내일 회의/);
   assert.doesNotMatch(calendar, /15:30|10:00|12:00/);
@@ -254,4 +255,36 @@ test('Home today Actions remain visible while source Events are still loading', 
   assert.match(html, /14:00/);
   assert.doesNotMatch(html, /할 일을 불러오는 중/);
   assert.match(html, /일정을 불러오는 중/);
+});
+
+test('upcoming combines Calendar Actions and Events by date/time, deduplicates IDs and limits after sorting', () => {
+  const { upcomingEntries } = uiLoader()('src/components/home/upcoming-model.ts');
+  const base = { actionId: 'direct', title: '직접 추가', status: 'open', deadlineStatus: 'confirmed', deadlineDate: '2026-10-14', deadlineAt: '2026-10-14T16:00:00+09:00', sources: [] };
+  const event = { id: 'calendar:one', itemId: 'one', title: 'Google 일정', kind: 'calendar', date: '2026-10-14', time: '2026-10-14T10:00:00+09:00' };
+  const later = Array.from({length: 7}, (_, index) => ({ ...base, actionId: `later-${index}`, deadlineDate: `2026-10-${20+index}`, deadlineAt: null }));
+  const rows = upcomingEntries('2026-10-13', [...later, base, base, {...base, actionId:'completed', status:'completed'}, {...base, actionId:'review', deadlineStatus:'needs_review'}, {...base, actionId:'today', deadlineAt:null, deadlineDate:'2026-10-13'}], [event]);
+  assert.equal(rows.length, 5); assert.equal(rows[0].id, event.id); assert.equal(rows[1].id, 'deadline:direct');
+  assert.equal(rows[1].href, '/actions'); assert.equal(rows[0].href, '/items/one');
+  assert.equal(rows.filter(row => row.id==='deadline:direct').length, 1);
+  assert.equal(rows.some(row => /completed|review|today/.test(row.id)), false);
+});
+
+test('upcoming reads updated same Action and removes completed/deleted or moved-to-today Actions', () => {
+  const { upcomingEntries } = uiLoader()('src/components/home/upcoming-model.ts');
+  const action = { actionId:'same', title:'처음 제목', status:'open', deadlineStatus:'confirmed', deadlineDate:'2026-10-14', deadlineAt:null };
+  const edited = {...action, title:'수정 제목', deadlineDate:'2026-10-16', deadlineAt:'2026-10-16T17:30:00+09:00'};
+  const rows = upcomingEntries('2026-10-13', [edited], []);
+  assert.equal(rows[0].id, 'deadline:same'); assert.equal(rows[0].title, '수정 제목'); assert.equal(rows[0].date, '2026-10-16'); assert.equal(rows[0].time, edited.deadlineAt);
+  assert.equal(upcomingEntries('2026-10-13', [{...edited,status:'completed'}], []).length, 0);
+  assert.equal(upcomingEntries('2026-10-13', [], []).length, 0);
+  assert.equal(upcomingEntries('2026-10-16', [edited], []).length, 0);
+});
+
+test('future manual Actions render while Events load or fail, without a false empty state', () => {
+  const ui = uiLoader();
+  const action = { actionId:'manual',title:'미래 직접 할 일',status:'open',deadlineStatus:'confirmed',deadlineDate:'2026-10-14',deadlineAt:'2026-10-14T15:00:00+09:00',sources:[] };
+  for(const loading of [true,false]) {
+    const html = render(ui('src/components/home/today-todo-list.tsx').TodayTodoList, {today:'2026-10-13',actions:[action],events:[],eventEnds:{},busy:false,scheduleBusy:loading,error:'',scheduleError:loading?'':'일정 조회 오류'});
+    assert.match(html, /미래 직접 할 일/); assert.match(html, /15:00/); assert.doesNotMatch(html, /다가오는 일정이 없습니다/);
+  }
 });
