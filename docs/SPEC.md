@@ -1506,3 +1506,9 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - manual만 Source/ITEM 없는 사용자 입력 날짜를 허용한다. manual에는 Source/Evidence 연결을 금지하며 기존 source Evidence/날짜 검증 및 RLS/grants를 유지한다.
 - create는 로그인 소유자의 manual을 생성하며 edit/delete는 명시적 manual origin과 id/user_id/updated_at을 검사한다. 자료 기반 Action 수정/삭제는 별도 override 정책 전까지 차단한다.
 - 실제 DB CRUD 및 별도 요청 간 persistence를 검증했다. 브라우저 보안 정책에 따른 Local 오류 탭 접근 거부로 UI/API/Home 반영 검증은 미완료다. 전체 E2E PASS로 간주하지 않는다. 상세: `docs/reviews/MANUAL_ACTION_FIX_20261013.md`.
+
+### 2026-10-13 후속 실제 브라우저 검증
+
+- 운영 Planner의 Manual Action 추가·동일 행 수정·완료·복원·삭제와 새로고침/동일 계정 재로그인 persistence를 확인했다. Google 수동 동기화는 Gmail 2회, Drive/Calendar 각 3회 실행했다.
+- Home의 오늘 할 일은 Action 조회 완료 후 표시하며, 별도 자료 Event 조회 완료를 기다리지 않는다. 다가오는 일정은 기존 Event 로딩 상태를 사용한다. 이 로딩 분리 수정은 로컬 브라우저에서 검증했으며 아직 배포하지 않았다.
+- PDF 실제 저장/본문 추출은 성공했으나 Gemini 분석은 GEMINI_UNAVAILABLE로 실패해 PDF Event→Home 전체 흐름은 미완료다. 새 AI 분류는 시작하지 않는다. 상세 결과와 미검증 범위: `docs/reviews/PRE_CLASSIFICATION_CORE_VERIFICATION_20261013.md`.

@@ -245,3 +245,13 @@ test("Quick Todo persists a single direct Action and returns that same ID to bot
   assert.match(render(ui("src/components/home/today-calendar.tsx").TodayCalendar, props), /코딩테스트 준비/);
   assert.match(render(ui("src/components/home/today-todo-list.tsx").TodayTodoList, { ...props, eventEnds: {}, error: "", scheduleError: "" }), /코딩테스트 준비/);
 });
+
+test('Home today Actions remain visible while source Events are still loading', () => {
+  const ui = uiLoader();
+  const action = { kind: 'action', actionId: 'manual-e2e', title: 'E2E visible manual todo', type: 'required', status: 'open', deadlineStatus: 'confirmed', deadlineDate: '2026-10-13', deadlineAt: '2026-10-13T14:00:00+09:00', sources: [] };
+  const html = render(ui('src/components/home/today-todo-list.tsx').TodayTodoList, { today: '2026-10-13', actions: [action], events: [], eventEnds: {}, busy: false, scheduleBusy: true, error: '', scheduleError: '' });
+  assert.match(html, /E2E visible manual todo/);
+  assert.match(html, /14:00/);
+  assert.doesNotMatch(html, /할 일을 불러오는 중/);
+  assert.match(html, /일정을 불러오는 중/);
+});

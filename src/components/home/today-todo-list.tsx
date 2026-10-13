@@ -12,12 +12,13 @@ function clock(value?: string | null) {
   }).format(new Date(value));
 }
 
-export function TodayTodoList({ today, actions, events, eventEnds, busy, error, scheduleError }: {
+export function TodayTodoList({ today, actions, events, eventEnds, busy, scheduleBusy = busy, error, scheduleError }: {
   today: string;
   actions: SearchActionResult[];
   events: ScheduleEvent[];
   eventEnds: Record<string, string>;
   busy: boolean;
+  scheduleBusy?: boolean;
   error: string;
   scheduleError: string;
 }) {
@@ -51,7 +52,7 @@ export function TodayTodoList({ today, actions, events, eventEnds, busy, error, 
           <Link href="/actions" className="inline-flex shrink-0 items-center gap-1 text-[13px] font-medium text-blue-600 hover:underline">전체 보기 <ArrowRight className="size-3.5" /></Link>
         </div>
         {scheduleError && <p role="alert" className="py-3 text-sm text-red-600">{scheduleError}</p>}
-        {busy ? <p role="status" className="py-5 text-sm text-slate-500">일정을 불러오는 중…</p> : (
+        {scheduleBusy ? <p role="status" className="py-5 text-sm text-slate-500">일정을 불러오는 중…</p> : (
           <ul className="divide-y divide-blue-50">
             {upcoming.map(event => (
               <li key={event.id} className="flex items-center gap-3 py-2.5">

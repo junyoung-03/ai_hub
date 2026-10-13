@@ -131,7 +131,8 @@ export function TodayDashboard({
             actions={allActions}
             events={events}
             eventEnds={eventEnds}
-            busy={actions.busy || schedule.busy}
+            busy={actions.busy}
+            scheduleBusy={schedule.busy}
             error={actions.error}
             scheduleError={schedule.error}
           />
