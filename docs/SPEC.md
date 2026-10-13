@@ -1513,6 +1513,12 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - Home의 오늘 할 일은 Action 조회 완료 후 표시하며, 별도 자료 Event 조회 완료를 기다리지 않는다. 다가오는 일정은 기존 Event 로딩 상태를 사용한다. 이 로딩 분리 수정은 로컬 브라우저에서 검증했으며 아직 배포하지 않았다.
 - PDF 실제 저장/본문 추출은 성공했으나 Gemini 분석은 GEMINI_UNAVAILABLE로 실패해 PDF Event→Home 전체 흐름은 미완료다. 새 AI 분류는 시작하지 않는다. 상세 결과와 미검증 범위: `docs/reviews/PRE_CLASSIFICATION_CORE_VERIFICATION_20261013.md`.
 
+### 2026-10-13 공개 Landing 서비스 디자인 통일
+
+- 공개 루트와 `/landing`은 현재 앱의 `✦ etc.` 브랜드, 오늘/자료함/플래너/설정 메뉴 표현, 공통 ghost asset/wash, primary blue와 rounded white card 디자인을 사용한다. 사용자 요청으로 별도 디자인 확인 없이 검증 후 운영 반영한다.
+- 예전 sidebar/마감 dashboard 모형 대신 실제 TodayCalendar와 TodayTodoList 컴포넌트를 소개용 정적 샘플 데이터로 재사용한다. 모바일 미리보기는 가독성을 위해 오늘 할 일/다가오는 일정 중심으로 표시한다. 샘플 영역은 inert/aria-hidden이고 예시임을 캡션으로 명시하며 실제 사용자 자료/API를 조회하지 않는다.
+- 공개 메뉴는 해당 소개 섹션으로 이동한다. 로그인/서비스 열기는 기존 LandingAuthButton/Google OAuth를 그대로 사용한다. 보호된 앱 UI/DB/분석/API/권한 계약은 변경하지 않는다.
+
 ### 2026-10-13 Gmail 분석 Worker 구현 — 실제 적용/배포 승인 대기
 
 사용자의 후속 요청으로 39절의 브라우저 최대 3건 한정·background queue 미도입 범위를 Gmail에 한해 대체한다.
