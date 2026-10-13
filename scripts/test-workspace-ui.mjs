@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
+import { uiLoader } from './content-ui-loader.mjs';
+const load=uiLoader();
 const output={};
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/actions/schedule-model.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:output,Date,Intl});
 const {dayInSeoul,weekEnd,actionGroup,actionDay,isOverdue,dDay,eventsFromDetail,eventOnDay,eventGroup,monthCells}=output;
@@ -42,4 +44,29 @@ test('cancelled Calendar event is omitted; independent AI observations remain ev
 test('monthly cells include leading/trailing days with complete calendar weeks',()=>{
  const cells=monthCells('2026-10');assert.equal(cells.length,35);assert.equal(cells[0],'2026-09-27');assert.equal(cells.at(-1),'2026-10-31');
  assert.equal(monthCells('2026-08').length,42);
+});
+
+test('planner preserves review dates and separates completed and expired exact times',()=>{
+ const {plannerGroup,matchesPlannerFilter}=load('src/components/actions/planner-model.ts');
+ const task={kind:'action',actionId:'a',title:'task',type:'required',status:'open',deadlineStatus:'confirmed',deadlineDate:'2026-10-13',deadlineAt:null,sources:[]};
+ const today='2026-10-13', now=Date.parse('2026-10-13T12:00:00+09:00');
+ assert.equal(plannerGroup(task,today,now),'today');
+ assert.equal(plannerGroup({...task,deadlineAt:'2026-10-13T10:00:00+09:00'},today,now),'overdue');
+ assert.equal(plannerGroup({...task,deadlineStatus:'needs_review'},today,now),'undated');
+ assert.equal(matchesPlannerFilter({...task,deadlineStatus:'needs_review'},'today',today),false);
+ assert.equal(plannerGroup({...task,status:'completed',deadlineAt:'2026-10-13T10:00:00+09:00'},today,now),'completed');
+ assert.equal(matchesPlannerFilter({...task,status:'completed'},'all',today),true);
+ assert.equal(matchesPlannerFilter({...task,status:'completed'},'today',today),false);
+});
+
+test('planner week stops on Seoul Sunday and upcoming excludes today',()=>{
+ const {plannerGroup,matchesPlannerFilter}=load('src/components/actions/planner-model.ts');
+ const task={kind:'action',actionId:'a',title:'task',type:'required',status:'open',deadlineStatus:'confirmed',deadlineDate:'2026-10-18',deadlineAt:null,sources:[]};
+ const today='2026-10-13',now=Date.parse('2026-10-13T00:00:00+09:00');
+ assert.equal(plannerGroup(task,today,now),'week');
+ assert.equal(matchesPlannerFilter(task,'week',today),true);
+ assert.equal(matchesPlannerFilter({...task,deadlineDate:'2026-10-19'},'week',today),false);
+ assert.equal(plannerGroup({...task,deadlineDate:'2026-10-19'},today,now),'upcoming');
+ assert.equal(matchesPlannerFilter({...task,deadlineDate:today},'upcoming',today),false);
+ assert.equal(matchesPlannerFilter({...task,deadlineDate:'2026-10-14'},'upcoming',today),true);
 });

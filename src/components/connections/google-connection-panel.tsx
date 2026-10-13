@@ -650,24 +650,26 @@ export function GoogleConnectionPanel({
                   {pending === "drive_scope_upgrade" ? "동의 준비 중…" : "Drive/Docs 읽기 권한 추가"}
                 </button>
               )}
-              <label className="block text-xs font-medium">
+              <label htmlFor="drive-mode" className="block text-xs font-medium">
                 수집 방식
                 <select
+                  id="drive-mode"
                   className="field mt-1 text-xs"
                   value={driveMode}
                   onChange={(e) => setDriveMode(e.target.value)}
                 >
-                  <option value="folder">특정 폴더 ID (비워두면 최상위 내 드라이브)</option>
+                  <option value="folder">특정 폴더 ID</option>
                   <option value="files">특정 파일 ID 목록 (최대 20개)</option>
                 </select>
               </label>
-              <label className="block text-xs font-medium">
-                {driveMode === "folder" ? "폴더 ID (선택사항)" : "파일 ID (쉼표나 줄바꿈으로 구분)"}
+              <label htmlFor="drive-target" className="block text-xs font-medium">
+                {driveMode === "folder" ? "폴더 ID" : "파일 ID (쉼표나 줄바꿈으로 구분)"}
                 <textarea
+                  id="drive-target"
                   className="field mt-1 text-xs font-mono"
                   rows={2}
                   value={driveTarget}
-                  placeholder={driveMode === "folder" ? "비워두면 '내 드라이브' 루트 폴더 수집" : "파일 ID 입력"}
+                  placeholder={driveMode === "folder" ? "수집할 폴더 ID 입력" : "파일 ID 입력"}
                   onChange={(e) => setDriveTarget(e.target.value)}
                 />
               </label>

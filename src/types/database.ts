@@ -80,6 +80,7 @@ export type Database = {
       }
       actions: {
         Row: {
+          origin: "source" | "manual"
           action_type: Database["public"]["Enums"]["action_type"]
           completed_at: string | null
           conditions: string[]
@@ -100,6 +101,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          origin?: "source" | "manual"
           action_type: Database["public"]["Enums"]["action_type"]
           completed_at?: string | null
           conditions?: string[]
@@ -120,6 +122,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          origin?: "source" | "manual"
           action_type?: Database["public"]["Enums"]["action_type"]
           completed_at?: string | null
           conditions?: string[]

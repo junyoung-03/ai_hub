@@ -1,23 +1,55 @@
-import styles from "@/components/workspace/demo-frame.module.css";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { Navigation } from "@/components/shell/navigation";
 import { TopBar } from "@/components/shell/top-bar";
-import { Sidebar } from "@/components/shell/sidebar";
-import { requirePageUser } from "@/lib/supabase/auth";
+import { PageTransition } from "@/components/shell/page-transition";
+import { getCurrentUser, requirePageUser } from "@/lib/supabase/auth";
 
-export async function AppShell({ title, children, hideTitle = false, demo = true }: { title: string; children: ReactNode; hideTitle?: boolean; demo?: boolean }) {
-  // Every protected page retains its server-side session boundary.
-  const user = await requirePageUser();
-  return <div className={demo ? `${styles.demo} min-h-dvh bg-[#fdfdfd] text-slate-800` : "min-h-dvh bg-canvas"} style={demo ? { backgroundImage:"radial-gradient(ellipse at 48% 8%, #f8f9fc 0%, transparent 48%), radial-gradient(ellipse at 90% 70%, #fcfcfe 0%, transparent 55%)" } : undefined}>
-    <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-surface focus:p-3">본문으로 이동</a>
-    <Suspense fallback={<div className="h-14 border-b bg-surface" />}><TopBar email={user.email ?? ""} /></Suspense>
-    <div className="flex">
-      <Sidebar demo={demo}/>
-      <main id="main-content" className="min-w-0 flex-1 px-4 py-6 pb-28 md:px-8 md:py-8 md:pb-12">
-        <div className={demo ? "mx-auto max-w-[1100px]" : "mx-auto max-w-5xl"}>{!hideTitle && <h1 className="mb-6 break-words text-xl font-medium tracking-[-0.025em]">{title}</h1>}{children}</div>
+export async function AppShell({
+  title,
+  children,
+  hideTitle = false,
+  demo = false,
+  homeBackground = true,
+  workspace = false,
+}: {
+  title: string;
+  children: ReactNode;
+  hideTitle?: boolean;
+  demo?: boolean;
+  homeBackground?: boolean;
+  workspace?: boolean;
+}) {
+  const user = demo ? await getCurrentUser().catch(() => null) : await requirePageUser();
+  const email = user?.email || "";
+
+  return (
+    <div className={`relative isolate min-h-dvh ${homeBackground ? "home-reference-shell bg-transparent" : "bg-[#f5f9ff]"} text-slate-800 antialiased ${hideTitle ? "home-shell" : ""} ${workspace ? "workspace-shell" : ""}`}>
+      {homeBackground && (
+        <><div className="home-background-ghost" aria-hidden="true" /><div className="home-background-wash" aria-hidden="true" /></>
+      )}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:p-3 focus:shadow-md"
+      >
+        본문으로 이동
+      </a>
+      <Suspense fallback={<div className="h-14 border-b border-slate-200/80 bg-white" />}>
+        <TopBar email={email} />
+      </Suspense>
+      <main id="main-content" className="w-full pb-24 md:pb-12">
+        <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10">
+          {!hideTitle && (
+            <h1 className="mb-6 break-words text-xl font-semibold tracking-[-0.025em] text-slate-900">
+              {title}
+            </h1>
+          )}
+          <PageTransition>{children}</PageTransition>
+        </div>
       </main>
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 backdrop-blur-sm px-2 pb-[env(safe-area-inset-bottom)] md:hidden">
+        <Navigation mobile />
+      </div>
     </div>
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface px-2 pb-[env(safe-area-inset-bottom)] md:hidden"><Navigation mobile /></div>
-  </div>;
+  );
 }

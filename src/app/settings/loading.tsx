@@ -3,7 +3,7 @@ import { ItemLoading } from "@/components/items/item-loading";
 
 export default function Loading() {
   return (
-    <AppShell title="설정 · 연결">
+    <AppShell title="설정" workspace>
       <ItemLoading />
     </AppShell>
   );

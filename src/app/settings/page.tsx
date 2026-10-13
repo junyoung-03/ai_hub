@@ -2,6 +2,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { GoogleConnectionPanel } from "@/components/connections/google-connection-panel";
 import { getGoogleConnectionSummary, getGoogleServicesSyncSummary } from "@/lib/google/connections";
 import { requirePageUser } from "@/lib/supabase/auth";
+import { PageHeading } from "@/components/shell/page-heading";
 
 const NOTICES: Record<string, string> = {
   denied: "Google 권한 동의가 취소되었습니다.",
@@ -26,8 +27,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const notice = result && Object.hasOwn(NOTICES, result) ? NOTICES[result] : null;
 
   return (
-    <AppShell title="설정 · 연결">
-      <GoogleConnectionPanel connection={connection} syncSummary={syncSummary} notice={notice} />
+    <AppShell title="설정" hideTitle workspace>
+      <PageHeading title="설정" description="계정과 연결된 서비스의 상태를 확인하세요."/>
+      <div className="settings-content mx-auto max-w-[1120px] space-y-7">
+        <section aria-label="내 계정" className="workspace-card flex items-center gap-4 p-6"><span className="grid size-12 shrink-0 place-items-center rounded-full bg-slate-900 text-lg font-semibold text-white">{(user.email?.[0] ?? "A").toUpperCase()}</span><div className="min-w-0"><h2 className="font-semibold text-slate-900">내 계정</h2><p className="mt-1 break-all text-sm text-slate-500">{user.email}</p></div></section>
+        <GoogleConnectionPanel connection={connection} syncSummary={syncSummary} notice={notice} />
+      </div>
     </AppShell>
   );
 }

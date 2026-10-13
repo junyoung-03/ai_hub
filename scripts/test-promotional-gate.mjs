@@ -42,7 +42,7 @@ for(const [name,flag,dbReady,enabled] of matrix)test(name+': Library, Home, Sear
  assert.equal(requests[0].searchParams.has('item_is_visible'),enabled);
  const home=uiLoader({...deps,'@/lib/items/queries':queries,'@/lib/google/connections':{getGoogleConnectionSummary:async()=>null},'@/components/workspace/request-clock':{getWorkspaceClock:async()=>Date.parse(reference.created_at)},'@/components/shell/app-shell':{AppShell:({children})=>React.createElement('main',{},children)},'@/components/actions/schedule-workspace':{ScheduleWorkspace:()=>null}});
  const html=renderToStaticMarkup(await home('src/components/home/today-view.tsx').TodayView());
- assert.equal(html.includes('광고 포함'),enabled);assert.equal(requests[1].searchParams.get('limit'),'4');assert.equal(requests[1].searchParams.has('item_is_visible'),enabled);
+ assert.equal(html.includes('광고 포함'),false);assert.equal(html.includes('최근 추가된 자료'),false);assert.equal(requests.length,1); // Home no longer fetches a hidden recent library.
  const c=loadSearch('src/lib/search/contract.ts',{}, {process:{env:{SEARCH_CURSOR_SECRET:'synthetic-search-secret-at-least-32-characters'}}});
  let candidate,snapshot;
  const store={call:async(name,args)=>{

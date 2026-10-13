@@ -1452,3 +1452,57 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - 이미 저장된 v0.3 Classification/Action/Event는 OFF에서도 읽을 수 있다. 일차 운영 복구는 flag OFF이며 bfe7f5f로의 코드 롤백을 호환된 것으로 간주하지 않는다.
 - Library 또는 promotional Search RPC의 schema-cache race는 legacy 경로로 한 번만 fallback한다. 모든 DB 장애를 성공으로 위장하지 않는다.
 - 아직 적용하지 않은 migration 파일에는 readiness/분리 RPC/선택 snapshot 무효화 계약을 반영한다. 이번 단계에서 원격 DB 적용·Commit·Push·Deploy는 하지 않는다.
+
+### Today/Home 최종 UI 확인 단계 (2026-10-13 사용자 요청, 배포 미승인)
+
+이번 요청은 41절의 Desktop sidebar/Header 및 Home 최근 자료 배치를 다음으로 대체한다.
+
+- Desktop은 `✦ etc.` / 오늘 / 자료 / 할 일 / 설정 / 사용자 이메일 상단 내비게이션이다. 기존 Next.js 경로와 180ms slide 전환을 유지한다.
+- Home은 오늘 제목·설명 → 기존 검색·실행 가능한 예시 chip → 큰 월간 Calendar(약 79%) + 오늘 할 일·다가오는 일정(약 21%)이다. 최근 자료 및 광고 토글은 Library에서 관리한다.
+- Calendar cell은 제목과 작은 dot만 표시하며 시간은 숨긴다. 오늘은 파란 원, 선택 날짜는 연한 blue border/background로 표시한다.
+- 오늘 할 일은 오늘 확정 날짜의 미완료 Action만 표시한다. checkbox·상태 탭·우측 추가 버튼을 제거하고 제목·dot·근거 있는 시간을 표시한다. 상태 관리는 /actions에서 한다.
+- 다가오는 일정은 미래 Event의 실제 시작·종료 시각을 표시한다. 종료 시각이 없으면 시작만, Google 종일 일정은 종일, 시각이 없는 AI Event는 시간 미정으로 표시한다. 시간을 추측하지 않는다.
+- Calendar Header의 단일 추가 버튼은 월·일·시간·제목 네 필드의 Quick Todo를 연다. 기존 직접 Action POST를 사용하고 Upload/Manual Text/Gemini/Event를 호출하지 않는다. 동일 actionId를 Calendar와 오늘 할 일에서 공유한다.
+- Quick Todo는 body portal의 viewport 전체 rgba(15,23,42,.18)/5px blur overlay와 400px white memo다. 큰 회색 배경 panel은 두지 않는다.
+- 검색 예시는 기존 parser의 이번 주 할 일 / 오늘 할 일과 계약 / 회의 키워드다. 특정 월일·최근 업로드 자연문 처리를 지원한다고 표시하지 않는다.
+- 기존 핵심 backend/검색 ranking/Google sync/AI/RLS는 변경하지 않는다. 사용자 확인 전 commit/push/deploy를 수행하지 않는다.
+
+### Home 승인 reference 배경 (2026-10-13 사용자 요청, 배포 미승인)
+
+- Foreground의 로고·내비게이션·검색·캘린더·카드·글자·간격은 변경하지 않는다.
+- 승인 reference PNG의 계정 영역을 비식별 blur 처리하고 기존 pixel 대비를 복원한 `public/backgrounds/etc-home-ghost.webp`를 사용한다. UI 그림을 새로 생성하지 않는다. 사용하지 않는 원본 WebP는 공개 asset에서 제거한다.
+- Home 배경은 fixed/inset:0/z-index:0/pointer-events:none/aria-hidden, cover/center top/no-repeat, scale(1.04), blur(10px)이다. 별도 fixed wash는 z-index:1/rgba(244,248,255,.62), 실제 main foreground는 relative/z-index:2다. 기존 Header의 sticky/z-index:30은 유지한다.
+- opacity .18 시험에서는 wash 합성 후 대비가 .0684로 너무 약했다. 최종 image opacity .40과 wash .62의 합성 후 실효 image 대비는 .152다. 배경 글자는 읽히지 않고 UI 윤곽은 보여야 한다.
+- Home AppShell의 전체 화면 배경은 transparent이고 개별 카드의 white는 유지한다. 정적 reference asset과 비어 있는 배경 레이어만 사용하며 가상 dashboard 그림·live DOM 복제·gradient 대체·추가 데이터 조회는 하지 않는다. 다른 화면의 배경은 유지한다.
+- 로컬 1440×900 preview를 먼저 제시한다. 사용자 승인 전 commit/push/deploy 금지는 유지한다.
+
+### 주요 페이지 UI 통일 (2026-10-13 사용자 요청, 배포 미승인)
+
+이 요청은 42절의 현재 목록 검색 및 완료 상태 열 생략과 이전 Actions 캘린더 중심 구성을 대체한다.
+
+- 상단·모바일 Navigation은 오늘 / 자료함 / 플래너 / 설정이다. `/library`, `/actions`, `/settings` URL과 API 계약은 유지한다.
+- AppShell에서 동일한 정적 ghost asset·wash·Header·slide transition을 공유한다. 각 페이지는 별도 배경을 만들지 않는다. Home foreground는 메뉴 명칭 외 유지한다.
+- 자료함: 간결한 제목/설명 + Primary 자료 추가, 기존 `/search?q=...` 검색 결과로 연결되는 검색창, 실제 source 필터와 접힌 기존 형식/추가일 필터, 넓은 제목/출처/추가일/처리 상태 목록이다. Calendar source도 기존 계약에서 지원하므로 유지한다. 분류 열이나 새로운 taxonomy는 추가하지 않는다.
+- 자료 추가는 기존 UploadControls/ManualTextControls를 그대로 사용한다. 상세는 기존 `/items/[id]`를 유지하며 Drawer 라우팅을 도입하지 않는다. 처리 중·실패·완료는 기존 processingStatus에서 표현한다. 새 상태를 저장하지 않는다.
+- 플래너: 전체/오늘/이번 주/예정/완료 필터와 기한 지남/오늘/이번 주/예정/날짜 확인·미정/완료 그룹을 사용하는 Action 목록이다. 전체에는 완료도 포함한다. 오늘/이번 주/예정 필터는 미완료만 보여주며 이번 주는 오늘부터 일요일, 예정은 내일부터다. 그룹은 중복 없이 표시한다. 확정되지 않은 날짜를 확정 그룹에 배치하지 않는다.
+- Planner는 기존 useActions, ActionStateButton, Home AddTodoModal을 재사용한다. 별도 Action 생성 API·Gemini·자료 생성·월간 캘린더는 추가하지 않는다. Event는 Home에서 확인하고 Planner에서 Action으로 변환하지 않는다.
+
+### 핵심 기능 실사용 검증 (2026-10-13, 배포 미승인)
+
+- 사용자 요청에 따라 Manual Action 생성과 수정은 동일한 제목·날짜·시간 검증을 공유한다. 실제 날짜와 00:00~23:59만 허용하며 사용자가 입력한 날짜를 KST로 저장한다.
+- Planner의 Manual Action 수정·삭제 route와 작은 수정 dialog/삭제 확인 dialog를 준비했다. 소유자 RLS 조회 후 id/user_id/updated_at 조건으로 같은 Action만 변경하며 ITEM·Evidence는 수정하지 않는다.
+- **2026-10-13 수정 전 DB 차단 기록: REVIEW_REQUIRED.** `assert_action_evidence`가 모든 Action에 current source와 일치하는 deadline_source_id를 요구한다. 따라서 ITEM 없는 Quick Todo 생성과 사용자 날짜 override는 현재 DB 계약으로 성공하지 못한다. 실제 브라우저 생성 실패 및 DB 함수 정의로 확인했다. 이를 해결하는 migration은 자동 적용하지 않는다.
+- Source가 있는 AI Action의 수정·삭제는 사용자 override 보호 및 삭제 후 재분석 재생성 방지 계약이 없으므로 현재 409로 차단한다. 기존 완료/복원은 유지한다. 이 제한을 기능 완료로 보고하지 않는다.
+- Home은 임시 추가 목록 대신 Planner와 같은 Action 조회 결과를 사용한다. 창 재활성화 시 목록을 재조회한다.
+- Google Drive UI는 기존 API대로 명시적 폴더/파일 ID를 요구한다. 비워도 된다는 부정확한 안내를 제거했다.
+- 업로드 파서 child는 sibling parser.mjs가 함께 있는 runtime 경로를 사용한다. Next의 단독 static child asset을 실행하지 않으며 child 환경에는 provider/DB credential을 전달하지 않는다.
+- 기존 Gemini 분석은 실사용 검증에서만 실행한다. 새 자료 자동분류/taxonomy/schema/Promotional 활성화 작업은 시작하지 않는다.
+- 설정: 실제 로그인 계정과 기존 GoogleConnectionPanel의 연결/동기화/권한/해제 흐름을 공통 card/blue palette로 표현한다. 새로운 설정이나 가짜 토글은 추가하지 않는다.
+- 변경 범위는 UI와 문서·관련 검증이다. Upload/PDF/OCR/Google OAuth/Sync/Gemini/Search ranking/DB/RLS는 변경하지 않는다. Local Preview만 진행하고 commit/push/deploy는 사용자 승인 전 수행하지 않는다.
+
+### 2026-10-13 승인된 Manual Action DB 수정
+
+- 사용자 승인으로 `20261013003636_manual_action_evidence_boundary.sql`을 연결 DB에 적용했다. actions.origin은 기존 자료 기반 source(default)와 사용자 직접 입력 manual을 구분하며 변경 불가다.
+- manual만 Source/ITEM 없는 사용자 입력 날짜를 허용한다. manual에는 Source/Evidence 연결을 금지하며 기존 source Evidence/날짜 검증 및 RLS/grants를 유지한다.
+- create는 로그인 소유자의 manual을 생성하며 edit/delete는 명시적 manual origin과 id/user_id/updated_at을 검사한다. 자료 기반 Action 수정/삭제는 별도 override 정책 전까지 차단한다.
+- 실제 DB CRUD 및 별도 요청 간 persistence를 검증했다. 브라우저 보안 정책에 따른 Local 오류 탭 접근 거부로 UI/API/Home 반영 검증은 미완료다. 전체 E2E PASS로 간주하지 않는다. 상세: `docs/reviews/MANUAL_ACTION_FIX_20261013.md`.

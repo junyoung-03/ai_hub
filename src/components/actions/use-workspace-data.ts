@@ -35,7 +35,13 @@ export function useActions(status: "open" | "completed" = "open") {
     }
     void run(); return () => controller.abort();
   }, [status,version]);
-  useEffect(() => { window.addEventListener("ai-hub:actions-changed",reload); return () => window.removeEventListener("ai-hub:actions-changed",reload); }, [reload]);
+  useEffect(() => {
+    const visible = () => { if (document.visibilityState === "visible") reload(); };
+    window.addEventListener("ai-hub:actions-changed", reload);
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", visible);
+    return () => { window.removeEventListener("ai-hub:actions-changed", reload); window.removeEventListener("focus", reload); document.removeEventListener("visibilitychange", visible); };
+  }, [reload]);
   return {rows,busy,error,reload};
 }
 export function useItemDetails(items: LibraryItem[]) {

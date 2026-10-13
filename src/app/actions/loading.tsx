@@ -3,7 +3,7 @@ import { ItemLoading } from "@/components/items/item-loading";
 
 export default function Loading() {
   return (
-    <AppShell title="할 일 · 일정" demo>
+    <AppShell title="플래너" workspace demo>
       <ItemLoading />
     </AppShell>
   );

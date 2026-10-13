@@ -1,62 +1,44 @@
-"use client";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, FileText, Search } from "lucide-react";
+import { FileText, Plus, Search } from "lucide-react";
 import type { LibraryItem } from "@/components/actions/use-workspace-data";
-import { useItemDetails } from "@/components/actions/use-workspace-data";
-import { shortDate, eventsFromDetail, unresolvedEventsFromDetail } from "@/components/actions/schedule-model";
-import { SourceBadge } from "@/components/workspace/workspace-ui";
-import { formatLabels } from "@/lib/items/presentation";
+import { shortDate } from "@/components/actions/schedule-model";
+import { workspaceSources } from "@/components/workspace/workspace-ui";
 
 function processingLabel(item: LibraryItem) {
   switch (item.processingStatus) {
-    case "failed": return { label: "처리 실패 · 상세에서 재시도", color: "text-red-500" };
-    case "analyzing": return { label: "AI 분석 중", color: "text-[#6c8cb9]" };
-    case "extracting": return { label: item.format === "image" || item.format === "screenshot" ? "OCR 추출 중" : "콘텐츠 추출 중", color: "text-amber-600" };
-    case "indexing": return { label: "검색 준비 중", color: "text-[#6c8cb9]" };
-    case "queued": return { label: "분석 대기 중", color: "text-slate-500" };
-    case "uploaded": return { label: "업로드 완료 · 추출 대기", color: "text-slate-500" };
-    case "completed": return null;
+    case "failed": return { label: "분석 실패 · 상세에서 확인", color: "bg-red-500" };
+    case "analyzing": return { label: "분석 중", color: "bg-blue-500" };
+    case "extracting": return { label: item.format === "image" || item.format === "screenshot" ? "OCR 추출 중" : "콘텐츠 추출 중", color: "bg-amber-500" };
+    case "indexing": return { label: "검색 준비 중", color: "bg-blue-500" };
+    case "queued": return { label: "분석 대기", color: "bg-slate-300" };
+    case "uploaded": return { label: "추출 대기", color: "bg-slate-300" };
+    case "completed": return { label: "분석 완료", color: "bg-emerald-500" };
   }
 }
 
-export function LibraryList({ items, toolbar }: { items: LibraryItem[]; toolbar?: ReactNode }) {
-  const [query, setQuery] = useState("");
-  const { details, busy, error, reload } = useItemDetails(items);
-  const needle = query.trim().toLocaleLowerCase();
-  const shown = items.filter(item => !needle || [item.title, details[item.id]?.item.contentText ?? ""].some(value => value.toLocaleLowerCase().includes(needle)));
-  return <div data-library-loading={busy}>
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <label className="flex min-h-11 w-full max-w-lg items-center gap-2.5 rounded-xl border border-slate-200/70 bg-white/90 px-3.5"><Search className="size-4 shrink-0 text-slate-400" aria-hidden="true"/><span className="sr-only">현재 페이지 제목·본문 검색</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="현재 목록에서 제목·본문 찾기" maxLength={500} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"/></label>
-      <Link href={needle ? `/search?q=${encodeURIComponent(query.trim())}` : "/"} className="inline-flex items-center gap-1.5 text-xs text-[#6d88b0]">전체 자료 검색<ArrowRight className="size-3.5"/></Link>
-    </div>
+export function LibraryList({ items, toolbar, filtered = false }: { items: LibraryItem[]; toolbar?: ReactNode; filtered?: boolean }) {
+  return <div>
+    <form action="/search" method="get" role="search" className="mb-5 flex min-h-14 items-center gap-3 rounded-2xl border border-blue-100 bg-white/95 px-4 shadow-sm shadow-blue-100/20">
+      <Search className="size-5 shrink-0 text-slate-400" aria-hidden="true"/>
+      <input name="q" type="search" required maxLength={500} aria-label="자료함 검색어" placeholder="자료함에서 검색하세요..." className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-slate-400"/>
+      <button type="submit" aria-label="자료 검색" className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-600 text-white hover:bg-blue-700"><Search className="size-4"/></button>
+    </form>
     {toolbar}
-    <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/90">
-      <div className="hidden grid-cols-[minmax(0,1fr)_100px_104px] gap-4 border-b border-slate-100 bg-[#f8fafe] px-5 py-3 text-[11px] text-slate-400 lg:grid"><span>제목 · 내용</span><span>출처</span><span className="text-right">추가일</span></div>
-      <ul className="divide-y divide-slate-100">{shown.map(item => {
-        const detail = details[item.id], status = processingLabel(item);
-        const currentActions = detail?.actions.filter(action => detail.evidence.some(evidence => evidence.actionId === action.id && evidence.isCurrent && evidence.itemId === item.id));
-        const deadlines = currentActions?.filter(action => action.deadlineStatus === "confirmed").length;
-        const events = detail ? eventsFromDetail(detail).length : 0;
-        const unresolved = detail ? unresolvedEventsFromDetail(detail).length : 0;
-        const subtitle = detail?.gmail?.from || detail?.item.contentText?.split(/\n/).find(line => line.trim() && line.trim() !== item.title) || formatLabels[item.format];
-        return <li key={item.id}><Link href={`/items/${item.id}`} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-3 p-4 transition-colors hover:bg-[#f8fafe] lg:grid-cols-[minmax(0,1fr)_100px_104px] lg:items-center lg:px-5 lg:py-4">
-          <div className="flex min-w-0 gap-3"><span className="mt-1 hidden shrink-0 sm:inline-flex"><SourceBadge source={item.source} iconOnly/></span><div className="min-w-0">
-            <h2 className="line-clamp-2 break-words text-sm font-semibold leading-6 text-slate-700">{item.title}</h2><p className="mt-1 line-clamp-1 text-xs leading-5 text-slate-400">{subtitle}</p>
-            <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
-              {status && <span className={`inline-flex items-center gap-1.5 ${status.color}`}><FileText className="size-3" aria-hidden="true"/>{status.label}</span>}
-              {!!currentActions?.length && <span className="text-slate-500">할 일 {currentActions.length}</span>}
-              {!!deadlines && <span className="text-orange-600">마감 {deadlines}</span>}
-              {!!events && <span className="text-[#6c8cb9]">일정 {events}</span>}
-              {!!unresolved && <span className="text-amber-700">날짜 확인 필요 {unresolved}</span>}
-            </div>
-          </div></div>
-          <SourceBadge source={item.source}/>
-          <time dateTime={item.createdAt} className="col-span-2 text-[11px] text-slate-400 lg:col-span-1 lg:text-right">{shortDate(item.createdAt)}</time>
+    <div className="workspace-card overflow-hidden">
+      <div className="hidden grid-cols-[minmax(0,1fr)_120px_130px_180px] gap-4 border-b border-slate-100 bg-slate-50/70 px-6 py-3.5 text-xs font-medium text-slate-500 lg:grid"><span>제목</span><span>출처</span><span>추가일</span><span>분석 상태</span></div>
+      <ul className="divide-y divide-slate-100">{items.map(item => {
+        const source = workspaceSources.find(entry => entry.value === item.source);
+        const Icon = source?.Icon ?? FileText;
+        const status = processingLabel(item);
+        return <li key={item.id}><Link href={`/items/${item.id}`} className="grid min-h-20 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-5 transition-colors hover:bg-blue-50/40 lg:grid-cols-[minmax(0,1fr)_120px_130px_180px] lg:px-6">
+          <div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl border border-slate-100 bg-slate-50 text-slate-400"><Icon className="size-4" aria-hidden="true"/></span><h2 className="line-clamp-2 text-sm font-semibold leading-6 text-slate-800">{item.title}</h2></div>
+          <span className="text-xs text-slate-500">{source?.label ?? item.source}</span>
+          <time dateTime={item.createdAt} className="text-xs text-slate-500">{shortDate(item.createdAt)}</time>
+          <span className="inline-flex items-center justify-end gap-2 text-xs text-slate-500 lg:justify-start"><span className={`size-1.5 shrink-0 rounded-full ${status.color}`} aria-hidden="true"/>{status.label}</span>
         </Link></li>;
       })}</ul>
-      {!shown.length && <p className="py-12 text-center text-sm text-slate-400">{needle ? "현재 목록에서 일치하는 자료를 찾지 못했습니다." : "조건에 맞는 자료가 없습니다."}</p>}
+      {!items.length && <div className="px-6 py-16 text-center"><FileText className="mx-auto mb-4 size-7 text-slate-300" aria-hidden="true"/><h2 className="font-semibold text-slate-800">{filtered ? "조건에 맞는 자료가 없습니다." : "아직 자료가 없습니다."}</h2><p className="mt-2 text-sm text-slate-500">{filtered ? "출처나 필터 조건을 변경해보세요." : "메일·문서·파일을 추가해보세요."}</p><Link href={filtered ? "/library" : "/library#add-material"} className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600">{!filtered && <Plus className="size-4"/>}{filtered ? "필터 초기화" : "자료 추가"}</Link></div>}
     </div>
-    <div aria-live="polite" className="mt-3 flex flex-wrap gap-3 text-[11px] text-slate-400"><span>현재 페이지 {shown.length}개{needle ? ` / ${items.length}개` : ""}</span>{busy && <span>본문·분석 상태 확인 중…</span>}{error && <span role="alert">{error}<button onClick={reload} className="ml-2 underline">다시 시도</button></span>}</div>
   </div>;
 }

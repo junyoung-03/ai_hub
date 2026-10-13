@@ -87,8 +87,9 @@ test("Library default UI has search, source tabs, collapsed format/date control 
   const { parseItemQuery } = ui("src/lib/items/filters.ts");
   const toolbar = React.createElement(LibraryToolbar, { query: parseItemQuery(new URLSearchParams()) });
   const html = render(LibraryList, { items: [], toolbar });
-  assert.ok(html.indexOf("현재 페이지 제목·본문 검색") < html.indexOf("자료 출처 필터"));
-  assert.match(html, /메모/);
+  assert.ok(html.indexOf("자료함 검색어") < html.indexOf("자료 출처 필터"));
+  assert.match(html, /action="\/search"/);
+  assert.match(html, /직접입력/);
   assert.match(html, /<details>/);
   for (const name of ["topic", "documentType", "processingStatus"]) assert.doesNotMatch(html, new RegExp(`name="${name}"`));
   const filtered = render(LibraryToolbar, { query: parseItemQuery(new URLSearchParams("source=calendar&topic=공지&documentType=notice&processingStatus=failed&format=text&limit=10")) });
@@ -170,7 +171,10 @@ test("Home, Search, Item Detail, Actions, Manual input and Upload controls retai
     "@/lib/uploads/browser/flow": { runUpload() { assert.fail("SSR must not upload/OCR"); } },
   });
   const home = await ui("src/components/home/today-view.tsx").TodayView();
-  assert.match(renderToStaticMarkup(home), /최근 추가된 자료/);
+  const homeHtml = renderToStaticMarkup(home);
+  assert.match(homeHtml, /오늘 캘린더/);
+  assert.match(homeHtml, /다가오는 일정/);
+  assert.doesNotMatch(homeHtml, /최근 추가된 자료/);
   assert.match(render(ui("src/components/search/search-workspace.tsx").SearchWorkspace, { initialQuery: "코딩테스트", initialNow: now }), /통합 검색어/);
   assert.match(render(ui("src/components/actions/schedule-workspace.tsx").ScheduleWorkspace, { today: "2026-10-12", now }), /할 일 · 일정/);
   const value = load("src/lib/items/presentation.ts").effectiveClassification({ ai_primary_topic: "AI 주제", user_primary_topic: "사용자 주제", ai_document_type: "notice", user_document_type: null, ai_tags: [], user_tags: [] });
@@ -204,4 +208,40 @@ test("explicit reanalysis upgrades a cached yearless Manual result through its c
   assert.equal(claims, 1);
   assert.equal(writes, 1);
   assert.equal(old.eventObservations[0].date, null);
+});
+
+test("Home agenda shows only today's open actions and preserves evidenced event times", () => {
+  const ui = uiLoader({});
+  const action = { kind: "action", actionId: "same-action", title: "오늘 제출", type: "required", status: "open", deadlineStatus: "confirmed", deadlineDate: "2026-10-13", deadlineAt: "2026-10-13T15:30:00+09:00", sources: [], requirements: [], conditions: [] };
+  const event = { id: "calendar:event", itemId: "event", title: "내일 회의", source: "calendar", kind: "calendar", date: "2026-10-14", lastDate: "2026-10-14", time: "2026-10-14T10:00:00+09:00", evidence: "원문", tentative: false };
+  const props = { today: "2026-10-13", busy: false, error: "", scheduleError: "", eventEnds: { [event.id]: "2026-10-14T12:00:00+09:00" }, events: [event], actions: [action, { ...action, actionId: "undated", title: "날짜 미정 작업", deadlineDate: null, deadlineAt: null }, { ...action, actionId: "done", title: "완료 작업", status: "completed" }, { ...action, actionId: "tomorrow", title: "내일 작업", deadlineDate: "2026-10-14", deadlineAt: null }] };
+  const html = render(ui("src/components/home/today-todo-list.tsx").TodayTodoList, props);
+  assert.match(html, /오늘 제출/); assert.match(html, /15:30/); assert.match(html, /10:00 - 12:00/);
+  assert.doesNotMatch(html, /날짜 미정 작업|완료 작업|내일 작업|checkbox|진행중|할 일 추가/);
+  const calendar = render(ui("src/components/home/today-calendar.tsx").TodayCalendar, { today: props.today, actions: [action], events: [event], busy: false });
+  assert.match(calendar, /오늘 제출/); assert.match(calendar, /내일 회의/);
+  assert.doesNotMatch(calendar, /15:30|10:00|12:00/);
+});
+
+test("Home distinguishes unknown event time and missing end time without inventing a duration", () => {
+  const ui = uiLoader({});
+  const event = { id: "one", itemId: "one", title: "시작만 확인", source: "calendar", kind: "calendar", date: "2026-10-14", lastDate: "2026-10-14", time: "2026-10-14T09:00:00+09:00", evidence: "원문", tentative: false };
+  const html = render(ui("src/components/home/today-todo-list.tsx").TodayTodoList, { today: "2026-10-13", actions: [], events: [event, { ...event, id: "two", time: null }], eventEnds: {}, busy: false, error: "", scheduleError: "" });
+  assert.match(html, /09:00/); assert.match(html, /종일/); assert.doesNotMatch(html, /09:00 -/);
+});
+
+test("Quick Todo persists a single direct Action and returns that same ID to both Home lists", async () => {
+  let inserts = 0;
+  const row = { id: "direct-action", title: "코딩테스트 준비", action_type: "required", status: "open", deadline_status: "confirmed", deadline_date: "2026-10-13", deadline_at: "2026-10-13T14:00:00+09:00", requirements: [], conditions: [] };
+  const admin = { from(table) {
+    assert.equal(table, "actions");
+    return { insert(value) { inserts++; assert.equal(value.user_id, "fixture-owner"); assert.equal(value.deadline_at, row.deadline_at); return { select() { return { single: async () => ({ data: row, error: null }) }; } }; } };
+  } };
+  const { createManualAction } = uiLoader({ "@/lib/items/writes": { ItemWriteError: class extends Error {} }, "./writes": { ItemWriteError: class extends Error {} }, "@/lib/supabase/auth": { requireUser: async () => ({ id: "fixture-owner" }) }, "@/lib/supabase/admin": { createAdminClient: () => admin } })("src/lib/items/manual-action.ts");
+  const { action } = await createManualAction({ title: row.title, date: row.deadline_date, time: "14:00" });
+  assert.equal(inserts, 1); assert.equal(action.actionId, row.id); assert.equal(action.sources.length, 0);
+  const ui = uiLoader({});
+  const props = { today: row.deadline_date, actions: [action], events: [], busy: false };
+  assert.match(render(ui("src/components/home/today-calendar.tsx").TodayCalendar, props), /코딩테스트 준비/);
+  assert.match(render(ui("src/components/home/today-todo-list.tsx").TodayTodoList, { ...props, eventEnds: {}, error: "", scheduleError: "" }), /코딩테스트 준비/);
 });

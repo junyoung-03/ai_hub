@@ -1,11 +1,13 @@
 import { fork } from 'node:child_process';
-import { resolve as resolvePath } from 'node:path';
+import { resolve as resolvePath, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { inspectBytes } from './parser.mjs';
 
 function resolveChildPath() {
-  const candidates = [];
+  // Next may emit child.mjs as an isolated static asset without its sibling parser.
+  // Prefer the traced runtime directory and require the complete module pair.
+  const candidates = [resolvePath(process.cwd(), 'workers/upload/child.mjs')];
   try {
     candidates.push(fileURLToPath(new URL('./child.mjs', import.meta.url)));
   } catch {}
@@ -15,7 +17,7 @@ function resolveChildPath() {
     resolvePath(process.cwd(), 'app/workers/upload/child.mjs')
   );
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate) && existsSync(resolvePath(dirname(candidate), 'parser.mjs'))) return candidate;
   }
   return null;
 }
@@ -53,7 +55,8 @@ export function isolatedInspect(bytes, mime, { timeout = 120000, signal, render 
     return new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new Error('PROCESSING_TIMEOUT')); return; }
       // Runtime path is explicitly traced by Next config, not rewritten into a bundle URL.
-      const child = Reflect.apply(_fork, undefined, [childPath, [], { execArgv: ['--max-old-space-size=192'], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }]);
+      const env = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'PATH'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
+      const child = Reflect.apply(_fork, undefined, [childPath, [], { env, execArgv: ['--max-old-space-size=192'], stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }]);
       let settled = false;
       const finish = (error, result) => {
         if (settled) return;

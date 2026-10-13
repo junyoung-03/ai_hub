@@ -60,10 +60,10 @@ test('Library toggle changes cursor context, resets pagination, preserves source
  assert.equal(requests[0].searchParams.get('item_is_visible'),'eq.true');assert.equal(requests[1].searchParams.has('item_is_visible'),false);assert.equal(requests[0].searchParams.get('limit'),'31');assert.equal(requests[0].searchParams.get('user_id'),'eq.owner');
 });
 
-test('Home requests visibility before 3-row limit and exposes a secondary toggle',async()=>{
+test('Home focuses on Calendar and Actions without a hidden recent library or promotional toggle',async()=>{
  const requests=[];const ui=uiLoader({...gate,'@/lib/supabase/auth':{getCurrentUser:async()=>({id:'owner'})},'@/lib/items/queries':{listItems:async q=>{requests.push(q);return {items:[]};}},'@/lib/google/connections':{getGoogleConnectionSummary:async()=>null},'@/components/workspace/request-clock':{getWorkspaceClock:async()=>Date.parse('2026-10-12')},'@/components/shell/app-shell':{AppShell:({children})=>React.createElement('main',{},children)},'@/components/actions/schedule-workspace':{ScheduleWorkspace:()=>null}});
  const {TodayView}=ui('src/components/home/today-view.tsx');const a=renderToStaticMarkup(await TodayView()),b=renderToStaticMarkup(await TodayView({includePromotional:true}));
- assert.equal(requests[0].limit,3);assert.equal(requests[0].filters.includePromotional,undefined);assert.equal(requests[1].filters.includePromotional,'true');assert.match(a,/광고 포함 꺼짐/);assert.match(b,/광고 포함 켜짐/);
+ assert.equal(requests.length,0);assert.doesNotMatch(a,/광고 포함|최근 추가된 자료/);assert.doesNotMatch(b,/광고 포함|최근 추가된 자료/);assert.match(a,/오늘 캘린더/);assert.match(b,/다가오는 일정/);
 });
 
 test('Search toggle is strictly boolean and cannot reuse the OFF signed cursor',()=>{

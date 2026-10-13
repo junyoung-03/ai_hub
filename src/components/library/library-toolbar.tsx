@@ -16,7 +16,7 @@ export function LibraryToolbar({ query, promotionalEnabled = false }: { query: I
         const url = libraryUrl({ ...query, filters: { ...filters, source: value || undefined } });
         const selected = (filters.source ?? "") === source.value;
         return <Link key={source.value} href={url} aria-current={selected ? "page" : undefined} className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-xs ${selected ? "border-[#c7d5ea] bg-[#eaf0fa] font-semibold text-[#5f7fae]" : "border-slate-200/70 bg-white/85 text-slate-500 hover:border-[#c7d5ea]"}`}>
-          {"Icon" in source && <source.Icon className={`size-3.5 ${source.color}`} aria-hidden="true"/>}{source.value === "manual" ? "메모" : source.label}
+          {"Icon" in source && <source.Icon className="size-3.5 text-slate-400" aria-hidden="true"/>}{source.label}
         </Link>;
       })}
     </nav>
