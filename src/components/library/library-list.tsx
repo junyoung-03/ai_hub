@@ -4,6 +4,7 @@ import { FileText, Plus, Search } from "lucide-react";
 import type { LibraryItem } from "@/components/actions/use-workspace-data";
 import { shortDate } from "@/components/actions/schedule-model";
 import { workspaceSources } from "@/components/workspace/workspace-ui";
+import { documentLabels } from "@/lib/items/presentation";
 
 function processingLabel(item: LibraryItem) {
   switch (item.processingStatus) {
@@ -32,7 +33,9 @@ export function LibraryList({ items, toolbar, filtered = false }: { items: Libra
         const Icon = source?.Icon ?? FileText;
         const status = processingLabel(item);
         return <li key={item.id}><Link href={`/items/${item.id}`} className="grid min-h-20 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-5 transition-colors hover:bg-blue-50/40 lg:grid-cols-[minmax(0,1fr)_120px_130px_180px] lg:px-6">
-          <div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl border border-slate-100 bg-slate-50 text-slate-400"><Icon className="size-4" aria-hidden="true"/></span><h2 className="line-clamp-2 text-sm font-semibold leading-6 text-slate-800">{item.title}</h2></div>
+          <div className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl border border-slate-100 bg-slate-50 text-slate-400"><Icon className="size-4" aria-hidden="true"/></span><div className="min-w-0"><h2 className="line-clamp-2 text-sm font-semibold leading-6 text-slate-800">{item.title}</h2>
+            {item.classification.available && <div className="mt-1 space-y-1 text-xs leading-5 text-slate-500"><p className="break-words">{item.classification.primaryTopic ?? "미분류"}{item.classification.documentType && <> · {documentLabels[item.classification.documentType]}</>}<span className="ml-2 text-slate-400">{item.classification.origin === "user" ? "직접 수정" : "AI 분류"}</span></p>{item.classification.tags.length > 0 && <p className="line-clamp-1 break-words text-slate-400">{item.classification.tags.slice(0, 3).join(" · ")}{item.classification.tags.length > 3 && ` 외 ${item.classification.tags.length - 3}개`}</p>}</div>}
+          </div></div>
           <span className="text-xs text-slate-500">{source?.label ?? item.source}</span>
           <time dateTime={item.createdAt} className="text-xs text-slate-500">{shortDate(item.createdAt)}</time>
           <span className="inline-flex items-center justify-end gap-2 text-xs text-slate-500 lg:justify-start"><span className={`size-1.5 shrink-0 rounded-full ${status.color}`} aria-hidden="true"/>{status.label}</span>

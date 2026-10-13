@@ -17,7 +17,13 @@ function job(value: Json | null): Job | null {
 /** Bounded invocation; Scheduler calls again to drain remaining/delayed jobs. */
 export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedUsers: string[], maxJobs = 3, demoItemIds?: string[]) {
   if (!allowedUsers.length || allowedUsers.length > 100 || allowedUsers.some(id => !uuid(id))) throw new Error("EXPLICIT_OWNER_SCOPE_REQUIRED");
-  if (process.env.PROMOTIONAL_NOISE_ENABLED === "true") throw new Error("PROMOTIONAL_MUST_REMAIN_OFF");
+  let noiseEnabled = false;
+  if (process.env.PROMOTIONAL_NOISE_ENABLED === "true") {
+    const rpc = admin.rpc.bind(admin) as unknown as (name: string) => {abortSignal(signal: AbortSignal): PromiseLike<{data:unknown;error:unknown}>};
+    const ready = await rpc("gmail_promotional_ready").abortSignal(AbortSignal.timeout(2_000));
+    if (ready.error || ready.data !== true) throw new Error("PROMOTIONAL_CONTRACT_NOT_READY");
+    noiseEnabled = true;
+  }
   if (demoItemIds && (!demoItemIds.length || demoItemIds.length > 3 || demoItemIds.some(id => !uuid(id)))) throw new Error("EXPLICIT_DEMO_SCOPE_REQUIRED");
   const { model } = getGeminiConfig();
   const counts = { complete:0, retry:0, failed:0, stale:0 };
@@ -33,20 +39,21 @@ export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedU
     try {
       const { data:item,error } = await admin.from("items").select("source,format,content_text,metadata").eq("id",current.itemId).eq("user_id",current.userId).single();
       if (error || !item?.content_text) throw new Error("ANALYSIS_STORAGE_UNAVAILABLE");
+      if (item.source !== "gmail" || item.format !== "email") throw new Error("INVALID_GMAIL_SOURCE");
       // Cached results still pass the unchanged DB RPC and its evidence checks.
       const artifact = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata) ? item.metadata.aiAnalysis : null;
       const stored = artifact && typeof artifact === "object" && !Array.isArray(artifact) ? artifact : null;
       // Automatic processing must not invalidate a successful unchanged source just
       // because the deployment selected a different provider model.
       const storedModel = typeof stored?.model === "string" ? stored.model : model;
-      const cache = stored?.schemaVersion === "0.2" && analysisCurrent(item,storedModel) ? stored.result : null;
+      const cache = (stored?.schemaVersion === "0.2" || stored?.schemaVersion === "0.3") && analysisCurrent(item,storedModel) ? stored.result : null;
       const resultModel = cache ? storedModel : model;
       const topics = await admin.from("classifications").select("ai_primary_topic,user_primary_topic").eq("user_id",current.userId).limit(200);
       if (topics.error) throw new Error("ANALYSIS_STORAGE_UNAVAILABLE");
       const names = [...new Set((topics.data ?? []).map(r=>r.user_primary_topic ?? r.ai_primary_topic).filter((v):v is string=>!!v?.trim()))];
-      const result = cache ? validateAnalysis(cache,item.content_text) : await analyzeGmailText(item.content_text,names,undefined,"0.2",demoItemIds ? {maxAttempts:1} : undefined);
+      const result = cache ? validateAnalysis(cache,item.content_text) : await analyzeGmailText(item.content_text,names,undefined,noiseEnabled ? "0.3" : "0.2",demoItemIds ? {maxAttempts:1} : undefined);
       const saved = await analysisJobRpc(admin,"finish_gmail_analysis_job",{...base,p_analysis:result as Json,p_model:resultModel,
-        p_fingerprint:analysisFingerprint(item.content_text,resultModel,"0.2"),p_error_code:null});
+        p_fingerprint:analysisFingerprint(item.content_text,resultModel,result.schemaVersion),p_error_code:null});
       if (saved.error) {
         if (saved.error.code === "PT409") { counts.stale++; continue; }
         throw new Error(["22023","23514","42501"].includes(saved.error.code ?? "") ? "ANALYSIS_PERSISTENCE_REJECTED" : "ANALYSIS_STORAGE_UNAVAILABLE");

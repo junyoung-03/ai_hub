@@ -1513,11 +1513,37 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - Home의 오늘 할 일은 Action 조회 완료 후 표시하며, 별도 자료 Event 조회 완료를 기다리지 않는다. 다가오는 일정은 기존 Event 로딩 상태를 사용한다. 이 로딩 분리 수정은 로컬 브라우저에서 검증했으며 아직 배포하지 않았다.
 - PDF 실제 저장/본문 추출은 성공했으나 Gemini 분석은 GEMINI_UNAVAILABLE로 실패해 PDF Event→Home 전체 흐름은 미완료다. 새 AI 분류는 시작하지 않는다. 상세 결과와 미검증 범위: `docs/reviews/PRE_CLASSIFICATION_CORE_VERIFICATION_20261013.md`.
 
+### 2026-10-13 검색 색인 재개 연결 보완 — 로컬 검증
+
+- 분석 완료 후 indexing 상태의 상세에서 기존 owner-scoped `/items/:id/index` API를 재개할 수 있다. 분석 재호출과 별개이며 ranking/vector/RPC 구조는 변경하지 않는다.
+- 색인 완료 또는 동일 fingerprint 완료 재사용 후, 같은 사용자·ITEM·updated_at이며 아직 indexing인 경우에만 processing_status를 completed로 반영한다. 새 원문 또는 분석 실패/진행 상태를 덮어쓰지 않는다.
+- 운영 반영은 별도 승인 전까지 하지 않는다.
+
 ### 2026-10-13 공개 Landing 서비스 디자인 통일
 
 - 공개 루트와 `/landing`은 현재 앱의 `✦ etc.` 브랜드, 오늘/자료함/플래너/설정 메뉴 표현, 공통 ghost asset/wash, primary blue와 rounded white card 디자인을 사용한다. 사용자 요청으로 별도 디자인 확인 없이 검증 후 운영 반영한다.
 - 예전 sidebar/마감 dashboard 모형 대신 실제 TodayCalendar와 TodayTodoList 컴포넌트를 소개용 정적 샘플 데이터로 재사용한다. 모바일 미리보기는 가독성을 위해 오늘 할 일/다가오는 일정 중심으로 표시한다. 샘플 영역은 inert/aria-hidden이고 예시임을 캡션으로 명시하며 실제 사용자 자료/API를 조회하지 않는다.
 - 공개 메뉴는 해당 소개 섹션으로 이동한다. 로그인/서비스 열기는 기존 LandingAuthButton/Google OAuth를 그대로 사용한다. 보호된 앱 UI/DB/분석/API/권한 계약은 변경하지 않는다.
+
+### 2026-10-13 기존 AI 자료 분류 활용 시작 — 로컬 구현
+
+- 사용자 후속 승인으로 자료함 목록의 제목 아래 기존 유효 주제·자료 성격·태그(최대 3개와 나머지 개수)를 표시한다. 분류 미생성 자료에는 AI 분류 결과를 만들어 표시하지 않는다.
+- 접힌 상세 필터에서 기존 `topic` 정확 일치와 `documentType` 필터를 사용한다. 출처·형식·추가일 필터, 기존 목록 query/RLS/cursor 계약을 유지한다. 별도 taxonomy/분류 schema/DB migration/분류 provider 호출은 추가하지 않는다.
+- 기존 `user_* ?? ai_*` 우선순위와 분류 수정 API를 사용한다. 사용자 태그의 빈 배열도 유효한 override이며 AI 태그로 대체하지 않는다. AI 원본 분류와 Source/Evidence는 보존한다.
+- 검증은 승인된 테스트 계정의 기존 분석 완료 메일 3건과 테스트 PDF의 저장된 결과를 재사용한다. 전체 메일 백필·시연 제한 확대·무료 예산 우회는 하지 않는다. 분류 결과 확인과 검색 색인 완료를 별도로 기록한다.
+- 이번 변경의 commit/push/deploy는 결과 보고 후 별도 사용자 승인까지 수행하지 않는다.
+
+### 2026-10-13 일반 분류 보정 및 Gmail 전용 광고 정책 — 로컬 검증
+
+이 후속 요청은 43절의 전체 Source 광고 판별 범위를 Gmail만으로 제한한다. 기존 override/assessment 테이블과 검색 RPC를 재사용한다.
+
+- 저장된 주제가 일반/일반자료/general이며 사용자 수정값이 전혀 없을 때만, 기존 자료 성격 또는 명확한 태그로 계약·행정 / 결제·금융 / 일정·행사 중 하나로 정규화한다. 복수 범주 충돌이나 카드/갱신 같은 약한 단서는 유지한다. 본문·Source·Evidence·기존 AI artifact는 변경하지 않고 AI 주제 열만 보정한다.
+- 새 migration은 기존 generic AI 주제의 조건부 보정과 이후 classification INSERT/UPDATE trigger, Gmail source 표시 경계, 저장된 결제/계약/보안/계정/장애 분류 보호, 기존 Worker finish의 v0.3 수용을 준비한다. 기존 적용 migration을 수정하지 않는다. 원격 적용은 승인 전 수행하지 않는다.
+- Gmail만 새 분석 1회에 기존 v0.3 NoiseAssessment를 함께 요청한다. 기존 성공 v0.2/v0.3 분석은 본문 fingerprint와 원래 모델로 재사용하며 광고 기능/모델 변경만으로 재호출하지 않는다. 기존 assessment 없는 Gmail은 SHOW다. 재시도할 미완료·실패 자료부터 신규 판별을 받는다.
+- 자동 숨김은 유효한 promotional Gmail만 대상으로 한다. Action/Deadline/Event 및 기존 중요 protection signal, 명확한 저장 분류는 SHOW를 유지한다. 실패/불확실/누락/오래된 assessment는 fail-open SHOW다. Gmail의 명시적 사용자 override는 기존 우선순위를 유지한다.
+- PDF/Image/Manual/Drive/Calendar는 과거 force_promotional이나 assessment가 있더라도 광고 정책으로 숨기지 않는다. 광고 override UI/API는 Gmail만 허용한다. 신규 비-Gmail 분석은 v0.2이며, 구버전 caller가 보낸 v0.3도 DB에서 noise를 버리고 일반 분석으로 저장한다.
+- 자료함/검색의 기존 광고 포함 토글·사전 eligibility predicate·cursor/snapshot 경로를 유지한다. ranking/vector/embedding 구조를 변경하지 않는다. 보정된 AI 주제는 DB에 저장되어 기존 정확 일치 필터와 일치한다. 보정 대상 소유자의 기존 검색 snapshot만 무효화하며 embedding을 재생성하지 않는다.
+- 앱은 기존 서버 flag와 새 Gmail 전용 readiness를 모두 확인한다. 새 migration이 없는 DB에서는 광고 기능을 OFF로 유지해 기존 broad-source 정책이 잘못 활성화되지 않도록 한다. 이번 검증은 격리 로컬 SQL과 승인된 4건 샘플 복사본에서만 수행하며 운영 flag/DB/스케줄은 변경하지 않는다.
 
 ### 2026-10-13 Gmail 분석 Worker 구현 — 실제 적용/배포 승인 대기
 

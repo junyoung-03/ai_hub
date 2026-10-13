@@ -80,7 +80,7 @@ test("unresolved dates have a visible review list and never get a calendar cell"
   assert.match(html, /href="\/items\/unclear"/);
 });
 
-test("Library default UI has search, source tabs, collapsed format/date control and no taxonomy controls", () => {
+test("Library keeps search and source tabs with collapsed existing classification/format/date controls", () => {
   const ui = uiLoader({ "@/components/actions/use-workspace-data": { useItemDetails: () => ({ details: {}, busy: false, error: "", reload() {} }) } });
   const { LibraryToolbar } = ui("src/components/library/library-toolbar.tsx");
   const { LibraryList } = ui("src/components/library/library-list.tsx");
@@ -91,9 +91,10 @@ test("Library default UI has search, source tabs, collapsed format/date control 
   assert.match(html, /action="\/search"/);
   assert.match(html, /직접입력/);
   assert.match(html, /<details>/);
-  for (const name of ["topic", "documentType", "processingStatus"]) assert.doesNotMatch(html, new RegExp(`name="${name}"`));
+  for (const name of ["topic", "documentType"]) assert.match(html, new RegExp(`name="${name}"`));
+  assert.doesNotMatch(html, /name="processingStatus"/);
   const filtered = render(LibraryToolbar, { query: parseItemQuery(new URLSearchParams("source=calendar&topic=공지&documentType=notice&processingStatus=failed&format=text&limit=10")) });
-  assert.match(filtered, /페이지 주소의 추가 조건/);
+  assert.match(filtered, /페이지 주소의 처리 상태 조건/);
   assert.match(filtered, /name="topic"/);
   assert.match(filtered, /<details open="">/);
   assert.match(filtered, /href="\/library\?source=calendar&amp;limit=10"/);

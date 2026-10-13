@@ -236,7 +236,7 @@ test('Worker runner uses shared provider, bounded claims, retry and stale persis
 
 test('free runner uses exact scope and defers provider quota errors without immediate retry',async()=>{
   let claims=0,providerCalls=0,saved;
-  const admin={from(){const q={select(){return q;},eq(){return q;},single:async()=>({data:{content_text:content,metadata:{}}}),limit:async()=>({data:[]})};return q;}};
+  const admin={from(){const q={select(){return q;},eq(){return q;},single:async()=>({data:{source:'gmail',format:'email',content_text:content,metadata:{}}}),limit:async()=>({data:[]})};return q;}};
   const runner=load('workers/analysis/runner.ts',{
     '@/lib/gemini/client':{getGeminiConfig:()=>({model:'gemini-synthetic'}),analyzeGmailText:async(_text,_topics,_context,version,options)=>{providerCalls++;assert.equal(version,'0.2');assert.equal(options.maxAttempts,1);throw new client.GeminiAnalysisError('GEMINI_UNAVAILABLE',429,undefined,71461);}},
     '@/lib/gemini/validation':validator,'@/lib/items/analysis-policy':policy,'@/lib/items/analysis-failure':failure,

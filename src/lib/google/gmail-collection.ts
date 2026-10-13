@@ -127,7 +127,12 @@ export async function collectInitialGmail() {
         const { data: rows, error: candidateError } = await cookieClient.from("items").select("id,source,format,content_text,metadata")
           .eq("user_id", user.id).eq("connection_id", connection.id).eq("source", "gmail").in("external_id", collectedIds).limit(INITIAL_GMAIL_LIMIT);
         if (candidateError || !rows) throw new Error();
-        analysisItemIds = rows.filter(row => analysisEligible(row) && !analysisCurrent(row, process.env.GEMINI_MODEL ?? "")).map(row => row.id);
+        analysisItemIds = rows.filter(row => {
+          const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {};
+          const artifact = metadata.aiAnalysis && typeof metadata.aiAnalysis === "object" && !Array.isArray(metadata.aiAnalysis) ? metadata.aiAnalysis : {};
+          const storedModel = typeof artifact.model === "string" ? artifact.model : process.env.GEMINI_MODEL ?? "";
+          return analysisEligible(row) && !analysisCurrent(row, storedModel);
+        }).map(row => row.id);
       }
     } catch { analysisDiscoveryFailed = true; }
     return { ...counts, complete, capped, query: INITIAL_GMAIL_QUERY, max_messages: INITIAL_GMAIL_LIMIT, analysisItemIds, analysisDiscoveryFailed };

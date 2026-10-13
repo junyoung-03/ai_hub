@@ -1,6 +1,6 @@
 import "server-only";
 import { promotionalReady, missingPromotionalContract } from "@/lib/items/promotional-gate";
-import { analysisEligible, analysisFingerprint } from "@/lib/items/analysis-policy";
+import { analysisCurrent, analysisEligible, analysisFingerprint } from "@/lib/items/analysis-policy";
 export { analysisFingerprint } from "@/lib/items/analysis-policy";
 import { analyzeGmailText, getGeminiConfig } from "@/lib/gemini/client";
 import { validateAnalysis } from "@/lib/gemini/validation";
@@ -30,7 +30,7 @@ export async function persistValidatedAnalysis(admin: ReturnType<typeof createAd
     void _noise;
     return validateAnalysis({ ...rest, schemaVersion: "0.2" }, input.contentText, input.dateContext);
   };
-  if (result.schemaVersion === "0.3" && !await promotionalReady()) result = legacy();
+  if (result.schemaVersion === "0.3" && (input.eligibleSource || !await promotionalReady())) result = legacy();
   let fingerprint = result.schemaVersion === input.result.schemaVersion ? input.fingerprint
     : analysisFingerprint(input.contentText, input.model, "0.2");
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -78,11 +78,17 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
     if (queued.error) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
     return { queued: true, processing_status: "queued" as const };
   }
-  const { model } = getGeminiConfig();
+  let { model } = getGeminiConfig();
   const dateContext = analysisDateContext(item);
-  const schemaVersion = await promotionalReady() ? "0.3" : "0.2";
-  const fingerprint = analysisFingerprint(item.content_text, model, schemaVersion);
+  let schemaVersion: "0.2" | "0.3" = item.source === "gmail" && await promotionalReady() ? "0.3" : "0.2";
   const artifact = record(record(item.metadata)?.aiAnalysis);
+  // Noise rollout is never a reason to call Gemini again for a successful mail.
+  const storedModel = typeof artifact?.model === "string" ? artifact.model : "";
+  if (item.source === "gmail" && analysisCurrent(item, storedModel)
+    && (artifact?.schemaVersion === "0.2" || artifact?.schemaVersion === "0.3")) {
+    model = storedModel; schemaVersion = artifact.schemaVersion;
+  }
+  const fingerprint = analysisFingerprint(item.content_text, model, schemaVersion);
   let resolvedCached: ItemAnalysis | undefined;
   if (artifact?.inputFingerprint === fingerprint && artifact?.model === model && artifact?.schemaVersion === schemaVersion) {
     const cached = validateAnalysis(artifact.result, item.content_text, dateContext);

@@ -4,7 +4,32 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { uiLoader } from './content-ui-loader.mjs';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 const load=uiLoader();
+
+test('library renders effective user classification and distinguishes unanalysed items',()=>{
+ const {effectiveClassification}=load('src/lib/items/presentation.ts');
+ const {LibraryList}=load('src/components/library/library-list.tsx');
+ const base={id:'synthetic',title:'Synthetic document',source:'upload',format:'pdf',processingStatus:'completed',createdAt:'2026-10-13T00:00:00Z'};
+ const classification=effectiveClassification({ai_primary_topic:'AI hidden topic',user_primary_topic:'User topic',ai_document_type:'notice',user_document_type:'schedule',ai_tags:['AI hidden tag'],user_tags:[]});
+ const html=renderToStaticMarkup(React.createElement(LibraryList,{items:[{...base,classification}]}));
+ assert.match(html,/User topic/);assert.match(html,/일정/);assert.match(html,/직접 수정/);
+ assert.doesNotMatch(html,/AI hidden topic|AI hidden tag/);
+ const pending=renderToStaticMarkup(React.createElement(LibraryList,{items:[{...base,processingStatus:'queued',classification:effectiveClassification(null)}]}));
+ assert.doesNotMatch(pending,/AI 분류|직접 수정/);assert.match(pending,/분석 대기/);
+});
+
+test('classification filter form submits existing topic and documentType exactly once and preserves source',()=>{
+ const {LibraryToolbar}=load('src/components/library/library-toolbar.tsx');
+ const {parseItemQuery}=load('src/lib/items/filters.ts');
+ const query=parseItemQuery(new URLSearchParams({source:'gmail',topic:'User topic',documentType:'notice'}));
+ const html=renderToStaticMarkup(React.createElement(LibraryToolbar,{query}));
+ assert.equal((html.match(/name="topic"/g)||[]).length,1);
+ assert.equal((html.match(/name="documentType"/g)||[]).length,1);
+ assert.match(html,/name="source" value="gmail"/);assert.match(html,/<details open=""/);
+ assert.match(html,/value="User topic"/);assert.match(html,/<option value="notice" selected=""/);
+});
 const output={};
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/actions/schedule-model.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:output,Date,Intl});
 const {dayInSeoul,weekEnd,actionGroup,actionDay,isOverdue,dDay,eventsFromDetail,eventOnDay,eventGroup,monthCells}=output;

@@ -14,7 +14,7 @@ const upgrade=v=>({...structuredClone(v),schemaVersion:'0.3',noiseAssessment:str
 const plain=v=>JSON.parse(JSON.stringify(v));
 const gate={'@/lib/items/promotional-gate':{promotionalReady:async()=>true,missingPromotionalContract:()=>false}};
 
-test('one Gemini request returns v0.3 noise + yearless Manual Event; no separate call or Action',async()=>{
+test('one Gmail structured request returns v0.3 noise and a yearless Event; no separate call or Action',async()=>{
  const dates=load('src/lib/gemini/date-context.ts');let count=0;
  const client=load('src/lib/gemini/client.ts',{'@/lib/gemini/validation':validator},{process:{env:{GEMINI_API_KEY:'fixture',GEMINI_MODEL:'gemini-fixture'}},fetch:async(_url,request)=>{
   count++;const body=JSON.parse(request.body);assert.ok(body.generationConfig.responseFormat.text.schema.properties.noiseAssessment);
@@ -109,7 +109,7 @@ test('override HTTP API enforces origin, strict body and authenticated owner RPC
  let auth=true,foreign=false,calls=0;
  const writes=uiLoader(gate)('src/lib/items/writes.ts');
  const authModule={AuthenticationRequiredError:AuthError,requireUser:async()=>{if(!auth)throw new AuthError();return {id:'owner'};}};
- const modules=uiLoader({...gate,'@/lib/supabase/auth':authModule,'@/lib/items/writes':writes,'./writes':writes,'@/lib/supabase/server':{createClient:async()=>({rpc:async(name,args)=>{
+ const modules=uiLoader({...gate,'@/lib/supabase/auth':authModule,'@/lib/items/writes':writes,'./writes':writes,'@/lib/supabase/server':{createClient:async()=>({from(){const q={select(){return q;},eq(){return q;},maybeSingle:async()=>({data:foreign?null:{source:'gmail'},error:null})};return q;},rpc:async(name,args)=>{
   calls++;assert.equal(name,'set_noise_override');assert.deepEqual(Object.keys(args).sort(),['p_item_id','p_override']);
   return foreign?{error:{code:'P0002'}}:{data:{aiVerdict:'normal',userOverride:args.p_override,effectiveVisibility:args.p_override==='force_promotional'?'HIDE':'SHOW',protectionState:[]},error:null};
  }})}});

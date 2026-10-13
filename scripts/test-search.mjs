@@ -4,6 +4,19 @@ import {loadSearch} from './search-loader.mjs';
 const c=loadSearch('src/lib/search/contract.ts'),chunks=loadSearch('src/lib/search/chunker.ts'),p=loadSearch('src/lib/search/provider.ts');
 const owner='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
 const plain=v=>JSON.parse(JSON.stringify(v));
+
+test('finished indexing clears only the same owner and revision waiting status, including a reused complete job',async()=>{
+ const service=loadSearch('src/lib/search/service.ts',{'@/lib/supabase/auth':{requireUser:async()=>({id:owner})},'@/lib/supabase/admin':{createAdminClient:()=>null}});
+ for(const cached of [false,true]){
+  const predicates=[],operations=[];let patch;
+  const item={id,user_id:owner,title:'Synthetic',content_text:'Synthetic searchable text',source:'gmail',metadata:{},updated_at:'revision-one'};
+  const store={admin:{from(table){const q={select(){return q;},eq(k,v){if(patch)predicates.push([k,v]);return q;},limit(){return q;},update(v){patch=v;return q;},maybeSingle:async()=>({data:item}),then(resolve){return Promise.resolve({data:table==='search_chunks'?[]:null,error:null}).then(resolve);}};return q;}},call:async(name,args)=>{operations.push(args.p_op);if(args.p_op==='rate')return {allowed:true};if(args.p_op==='claim')return cached?{state:'complete'}:{state:'claimed',attempt:id,nextChunk:0};return {};}};
+  const result=await service.indexItem(id,{identity:c.ACTIVE_EMBEDDING,embedDocument:()=>{throw new Error('Unexpected provider call');}},store);
+  assert.equal(result.state,'complete');assert.equal(patch.processing_status,'completed');
+  assert.deepEqual(plain(predicates),[['user_id',owner],['id',id],['updated_at','revision-one'],['processing_status','indexing']]);
+  assert.equal(operations.includes('finish'),!cached);assert.equal(operations.includes('fail'),false);
+ }
+});
 test('request schema rejects client owner/vector, invalid dates, cursor/limit bounds',()=>{
  assert.equal(c.parseSearch({query:' 농협 '}).limit,20);
  for(const v of [{query:'x',userId:owner},{query:'x',vector:[1]},{query:''},{query:'x',limit:51},{query:'x',filters:{from:'2026-02-30'}},{query:'x',filters:{from:'2026-10-05',to:'2026-10-01'}},{query:'x',filters:{topic:[]}}])assert.throws(()=>c.parseSearch(v));

@@ -20,7 +20,7 @@ function capability(flag,ready,fault){
  const calls=[];
  const client=createClient('https://synthetic.invalid','fixture',{auth:{persistSession:false},global:{fetch:async url=>{
   const u=new URL(url);calls.push(u);
-  if(u.pathname.endsWith('/rpc/promotional_noise_ready'))return ready?Response.json(true):Response.json({code:'PGRST202'},{status:404});
+  if(u.pathname.endsWith('/rpc/gmail_promotional_ready'))return ready?Response.json(true):Response.json({code:'PGRST202'},{status:404});
   if(fault==='table'&&u.pathname.endsWith('/item_noise_assessments'))return Response.json({code:'PGRST205'},{status:404});
   if(fault==='visibility'&&u.searchParams.has('item_is_visible'))return Response.json({code:'42703'},{status:400});
   if(fault==='cache')return Response.json({code:'PGRST204'},{status:400});
@@ -60,15 +60,15 @@ for(const [name,flag,dbReady,enabled] of matrix)test(name+': Library, Home, Sear
  let providerCalls=0,version,persisted;
  const gemini=load('src/lib/gemini/client.ts',{'@/lib/gemini/validation':validator},{process:{env:{GEMINI_API_KEY:'fixture',GEMINI_MODEL:'gemini-fixture'}},fetch:async(_url,init)=>{
   providerCalls++;const body=JSON.parse(init.body);version=body.generationConfig.responseFormat.text.schema.properties.schemaVersion.enum[0];
-  assert.equal(!!body.generationConfig.responseFormat.text.schema.properties.noiseAssessment,enabled);
-  return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(enabled?upgrade(cases[0].output):cases[0].output)}]}}]});
+  assert.equal(!!body.generationConfig.responseFormat.text.schema.properties.noiseAssessment,false);
+  return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(cases[0].output)}]}}]});
  }});
  const item={id:itemId,...reference,format:'text',content_text:cases[0].text,content_hash:null,processing_status:'queued',updated_at:reference.created_at,metadata:{}};
  const read={select(){return read;},eq(){return read;},maybeSingle:async()=>({data:item}),limit:async()=>({data:[]})};
  const claim={update(){return claim;},eq(){return claim;},select(){return claim;},maybeSingle:async()=>({data:{updated_at:'claimed'}})};
  const analysis=load('src/lib/items/analysis.ts',{...deps,'@/lib/gemini/validation':validator,'@/lib/gemini/client':gemini,'@/lib/items/filters':{isItemId:()=>true},'@/lib/supabase/server':{createClient:async()=>({from:()=>read})},'@/lib/supabase/admin':{createAdminClient:()=>({from:()=>claim,rpc:async(_name,args)=>{persisted=args;return {data:{action_count:0,created_count:0,reused_count:0,cached:false}};}})}});
  await analysis.analyzeOwnedItem(itemId);
- assert.equal(providerCalls,1);assert.equal(version,enabled?'0.3':'0.2');assert.equal(persisted.p_analysis.schemaVersion,version);
+ assert.equal(providerCalls,1);assert.equal(version,'0.2');assert.equal(persisted.p_analysis.schemaVersion,version);
  assert.equal(persisted.p_analysis.eventObservations[0].date,'2026-10-24');assert.equal(persisted.p_analysis.actions.length,0);
  assert.equal(persisted.p_input_fingerprint,load('src/lib/items/analysis-policy.ts').analysisFingerprint(cases[0].text,'gemini-fixture',version));
  if(flag==='false')assert.equal(calls.length,0);

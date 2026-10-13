@@ -3,6 +3,7 @@
 import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 export const migrationPath='supabase/migrations/20261012110525_promotional_noise_contract.sql';
+export const gmailOnlyMigrationPath='supabase/migrations/20261013104126_gmail_only_noise_and_topic_normalization.sql';
 export async function noiseDb({migrated=true}={}){
  const {PGlite}=await import('@electric-sql/pglite');
  const {vector}=await import('@electric-sql/pglite/vector');

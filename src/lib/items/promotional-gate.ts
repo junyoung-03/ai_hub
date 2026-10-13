@@ -9,7 +9,7 @@ export async function promotionalReady(): Promise<boolean> {
     const rpc = client.rpc.bind(client) as unknown as (name: string) => ReturnType<typeof client.rpc>;
     const from = client.from.bind(client) as unknown as (name: string) => ReturnType<typeof client.from>;
     const signal = AbortSignal.timeout(2_000);
-    const contract = await rpc("promotional_noise_ready").abortSignal(signal);
+    const contract = await rpc("gmail_promotional_ready").abortSignal(signal);
     if (contract.error || contract.data !== true) return false;
     // Check the REST schema cache too, without loading any user rows.
     const [assessment, visibility] = await Promise.all([

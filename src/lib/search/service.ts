@@ -182,8 +182,15 @@ export async function indexItem(itemId: string, provider: EmbeddingProvider = cr
   try { prepared = chunkItem(item as SearchItem); } catch (e) { if (e instanceof SearchError && ["TEXT_LIMIT", "CHUNK_LIMIT"].includes(e.code)) { await call("skip"); return { state: "skipped_limit" }; } throw e; }
   if (retry) await call("reset_retry");
   const semantic = semanticItemAllowed(itemId), claim = await call("claim", { fingerprint: prepared.fingerprint, snapshot: item.updated_at, chunkCount: prepared.chunks.length, semantic });
-  if (claim.state !== "claimed") return claim;
+  const markReady = async () => {
+    // Never mark newer source content, failed analysis, or a running analysis ready.
+    const { error: statusError } = await store.admin.from("items").update({ processing_status: "completed", processing_error: null })
+      .eq("user_id", user.id).eq("id", itemId).eq("updated_at", item.updated_at).eq("processing_status", "indexing");
+    if (statusError) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503);
+  };
+  if (claim.state !== "claimed") { if (claim.state === "complete") await markReady(); return claim; }
   const attempt = String(claim.attempt), start = Number(claim.nextChunk), end = Math.min(start + SEARCH_LIMITS.cycle, prepared.chunks.length), endsAt = Date.now() + 35_000;
+  let finished = false;
   try {
     const { data: previous, error: readError } = await store.admin.from("search_chunks").select("input_hash,embedding,embedding_version").eq("user_id", user.id).eq("item_id", itemId).eq("embedding_version", ACTIVE_EMBEDDING.version).limit(128);
     if (readError) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503);
@@ -198,9 +205,10 @@ export async function indexItem(itemId: string, provider: EmbeddingProvider = cr
       await call("write", { chunk, model: ACTIVE_EMBEDDING.model, embedding: embedding ? JSON.stringify(embedding) : null }, attempt); processed++;
     }
     const complete = processed === prepared.chunks.length; await call(complete ? "finish" : "release", {}, attempt);
+    if (complete) { finished = true; await markReady(); }
     return { state: complete ? "complete" : "pending", nextChunk: processed, chunkCount: prepared.chunks.length, semantic, embeddingVersion: ACTIVE_EMBEDDING.version };
   } catch (error) {
-    await call("fail", { code: error instanceof SearchError ? error.code : "INDEX_FAILED", retryAfter: error instanceof SearchError ? error.retryAfter ?? 60 : 60 }, attempt).catch(() => {});
+    if (!finished) await call("fail", { code: error instanceof SearchError ? error.code : "INDEX_FAILED", retryAfter: error instanceof SearchError ? error.retryAfter ?? 60 : 60 }, attempt).catch(() => {});
     throw error;
   }
 }
