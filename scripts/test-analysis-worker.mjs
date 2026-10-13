@@ -248,3 +248,20 @@ test('free runner uses exact scope and defers provider quota errors without imme
   const result=await runner.runAnalysisBatch(admin,[owner],1,[id(1)]);
   assert.equal(result.retry,1);assert.equal(claims,1);assert.equal(providerCalls,1);assert.equal(saved.p_retry_seconds,71461);
 });
+
+test('automatic worker reuses a validated unchanged artifact across model changes and preserves provenance',async()=>{
+  const originalModel='gemini-original', configuredModel='gemini-new';let saved;
+  const row={source:'gmail',format:'email',content_text:content,metadata:{aiAnalysis:{schemaVersion:'0.2',model:originalModel,inputFingerprint:policy.analysisFingerprint(content,originalModel,'0.2'),result:fixture()}}};
+  const admin={from(){const q={select(){return q;},eq(){return q;},single:async()=>({data:row}),limit:async()=>({data:[]})};return q;}};
+  const runner=load('workers/analysis/runner.ts',{
+    '@/lib/gemini/client':{getGeminiConfig:()=>({model:configuredModel}),analyzeGmailText:()=>{throw new Error('UNNECESSARY_PROVIDER_CALL');}},
+    '@/lib/gemini/validation':validator,'@/lib/items/analysis-policy':policy,'@/lib/items/analysis-failure':failure,
+    '@/lib/items/analysis-job-rpc':{analysisJobRpc:async(_admin,name,args)=>{
+      if(name==='claim_free_gmail_analysis_job')return {data:{userId:owner,itemId:id(1),token:id(2),attempt:1},error:null};
+      saved=args;return {data:{state:'complete'},error:null};
+    }},
+  });
+  const result=await runner.runAnalysisBatch(admin,[owner],1,[id(1)]);
+  assert.equal(result.complete,1);assert.equal(saved.p_model,originalModel);
+  assert.equal(saved.p_fingerprint,policy.analysisFingerprint(content,originalModel,'0.2'));
+});

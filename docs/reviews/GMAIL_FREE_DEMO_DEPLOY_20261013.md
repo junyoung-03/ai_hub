@@ -2,6 +2,20 @@
 
 사용자 승인: DB 적용, 한국어 커밋, push, Production 배포 및 테스트 계정 화면 확인.
 
+## 후속 키 등록 및 실제 실행 (2026-10-13)
+
+- 사용자에게 Vercel/Supabase Vault 비밀값 전달과 이번 세션 Google 계정 전환의 명시적 허용을 받았다.
+- 운영 키/모델/테스트 범위 등록 완료. Vault 인증키/범위 등록 완료. 비밀값은 출력/Git 기록하지 않았다.
+- 환경 반영 재배포 dpl_2TSSDBRtpqoCNCZgAY4YaWn2Abws: Ready.
+- 실제 Vault HMAC → pg_net → Production handler HTTP 200 확인. 응답 성공을 분석 완료로 계산하지 않는다.
+- 첫 작업은 모델 변경으로 기존 성공 결과를 다시 생성한 후 ANALYSIS_PERSISTENCE_REJECTED로 실패했다. 추가 호출을 멈추고, 동일 본문의 검증된 성공 결과를 원래 model/fingerprint로 재사용하도록 worker를 최소 수정했다.
+- 회귀 테스트 296/296, typecheck/lint/build 통과. 수정된 로컬 worker → 실제 DB 재사용 완료 1건, Gemini 호출 0회 확인. 추가 수정 운영 반영도 사용자 승인을 받았다.
+- 종료 시각 없는 Cron은 자동 승인 검토에서 거부되어 15분 종료 시각을 명시한 범위 제한 Cron으로 바꿨다. 수정 배포 확인 전 시연 Cron은 중지했다.
+- Google 테스트 계정 로그인은 성공했다. 추가 gds 도메인 확인도 사용자 허용을 받은 뒤, 복구/주소 설정은 변경하지 않고 건너뛰었다.
+- 테스트 계정의 운영 Detail에서 분류/태그/제출 Action/Evidence, Planner의 동일 제목 1개와 10월 18일 마감, Home의 10월 18일 Calendar cell 표시를 확인했다. 원문을 포함한 screenshot은 로컬 검증 산출물로만 저장하며 Git에 넣지 않는다.
+- 세 번째 승인 메일은 실제 Production HMAC handler에서 complete=1/failed=0으로 분석·저장됐다. 기존 2건과 합쳐 승인 메일 3건에 저장된 분석 결과가 있다.
+- 아래 키 등록 대기 내용은 직전 배포 시점 기록이며 현재 차단 상태가 아니다.
+
 ## DB 적용
 
 - gmail_analysis_worker_queue: 작업 큐/무료 예산/RPC 적용 성공
