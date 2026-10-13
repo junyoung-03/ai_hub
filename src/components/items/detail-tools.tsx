@@ -7,7 +7,7 @@ export function AnalyzeControl({ itemId, status, analyzed = false }: { itemId: s
   const router = useRouter(); const [busy,setBusy]=useState(false); const [message,setMessage]=useState(""); const [error,setError]=useState(false);
   async function analyze() { setBusy(true); setMessage(""); setError(false); try {
     const response=await fetch(`/api/v1/items/${itemId}/analyze`,{method:"POST",cache:"no-store"});
-    if(!response.ok)throw new Error(); setMessage("분석 결과가 저장되었습니다."); router.refresh();
+    if(!response.ok)throw new Error(); setMessage(response.status === 202 ? "백그라운드 분석을 요청했습니다. 잠시 후 다시 확인해 주세요." : "분석 결과가 저장되었습니다."); router.refresh();
   }catch{setError(true);setMessage("분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.");}finally{setBusy(false);} }
   const isFailed = status === "failed";
   const isAnalyzing = busy || status === "analyzing";

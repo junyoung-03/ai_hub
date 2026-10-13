@@ -14,7 +14,8 @@ export async function POST(request: Request, context: { params: Promise<{ itemId
   try {
     const body = await readWriteBody(request, true);
     if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length) return reply({ error: { code: "VALIDATION_ERROR", message: "분석 요청에는 옵션을 지정할 수 없습니다." } }, 400);
-    return reply(await analyzeOwnedItem((await context.params).itemId));
+    const result = await analyzeOwnedItem((await context.params).itemId);
+    return reply(result, "queued" in result ? 202 : 200);
   }
   catch (error) {
     if (error instanceof ItemWriteError) return writeErrorResponse(error);

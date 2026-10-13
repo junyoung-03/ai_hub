@@ -2,8 +2,8 @@ import "server-only";
 import { promotionalReady, missingPromotionalContract } from "@/lib/items/promotional-gate";
 import { analysisEligible, analysisFingerprint } from "@/lib/items/analysis-policy";
 export { analysisFingerprint } from "@/lib/items/analysis-policy";
-import { analyzeGmailText, getGeminiConfig, GeminiAnalysisError } from "@/lib/gemini/client";
-import { AnalysisValidationError, validateAnalysis } from "@/lib/gemini/validation";
+import { analyzeGmailText, getGeminiConfig } from "@/lib/gemini/client";
+import { validateAnalysis } from "@/lib/gemini/validation";
 import { analysisDateContext, type AnalysisDateContext } from "@/lib/gemini/date-context";
 import { isItemId } from "@/lib/items/filters";
 import { requireUser } from "@/lib/supabase/auth";
@@ -11,6 +11,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ItemAnalysis } from "@/types/analysis";
 import type { Json } from "@/types/database";
+import { analysisFailure } from "@/lib/items/analysis-failure";
+import { analysisJobRpc } from "@/lib/items/analysis-job-rpc";
 
 export class ItemAnalysisError extends Error {
   constructor(public readonly code: "ITEM_NOT_FOUND" | "INVALID_ANALYSIS_INPUT" | "ANALYSIS_IN_PROGRESS" | "ANALYSIS_STORAGE_UNAVAILABLE") { super(code); }
@@ -69,6 +71,13 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (gmailOnly && (item.source !== "gmail" || item.format !== "email")) throw new ItemAnalysisError("ITEM_NOT_FOUND");
   if (!analysisEligible(item)) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   if (!item.content_text?.trim() || item.content_text.length > 200_000) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
+  if (item.source === "gmail" && process.env.GMAIL_ANALYSIS_WORKER_ENABLED === "true"
+    && (process.env.GMAIL_ANALYSIS_ALLOWED_USERS ?? "").split(",").map(id=>id.trim()).includes(user.id)) {
+    // The authenticated owner can enqueue only their own stored ITEM; no provider call in this request.
+    const queued = await analysisJobRpc(supabase, "enqueue_gmail_analysis", { p_user_id:user.id, p_item_ids:[itemId] });
+    if (queued.error) throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
+    return { queued: true, processing_status: "queued" as const };
+  }
   const { model } = getGeminiConfig();
   const dateContext = analysisDateContext(item);
   const schemaVersion = await promotionalReady() ? "0.3" : "0.2";
@@ -105,8 +114,7 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
     return await persistValidatedAnalysis(admin, { userId: user.id, itemId, contentText: item.content_text,
       contentHash: item.content_hash, result, model, fingerprint, eligibleSource: item.source !== "gmail", dateContext });
   } catch (failure) {
-    const safeError = failure instanceof AnalysisValidationError ? "ANALYSIS_VALIDATION_FAILED"
-      : failure instanceof GeminiAnalysisError ? failure.code : "ANALYSIS_FAILED";
+    const safeError = analysisFailure(failure).code;
     await admin.from("items").update({ processing_status: "failed", processing_error: safeError })
       .eq("id", itemId).eq("user_id", user.id).eq("updated_at", claim.updated_at).eq("processing_status", "analyzing");
     throw failure;

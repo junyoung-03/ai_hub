@@ -15,6 +15,7 @@ export function loadAnalysisModule(path, imports = {}, globals = {}) {
       if (name in imports) return imports[name];
       if (name === "@/lib/items/promotional-gate") return { promotionalReady: async () => false, missingPromotionalContract: error => ["42P01","42703","42883","PGRST202","PGRST204","PGRST205"].includes(error?.code) };
       if (name === "@/lib/items/analysis-policy") return loadAnalysisModule("src/lib/items/analysis-policy.ts");
+      if (["@/lib/items/analysis-failure", "@/lib/items/analysis-job-rpc"].includes(name)) return loadAnalysisModule(`src/${name.slice(2)}.ts`, imports, globals);
       if (name === "@/lib/gemini/date-context") return loadAnalysisModule("src/lib/gemini/date-context.ts");
       if (name.endsWith("AI_OUTPUT_SCHEMA.json")) return require("../AI_OUTPUT_SCHEMA.json");
       if (name.startsWith("node:") || ["ajv", "ajv-formats", "@supabase/supabase-js"].includes(name)) return require(name);

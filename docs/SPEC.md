@@ -1512,3 +1512,37 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - 운영 Planner의 Manual Action 추가·동일 행 수정·완료·복원·삭제와 새로고침/동일 계정 재로그인 persistence를 확인했다. Google 수동 동기화는 Gmail 2회, Drive/Calendar 각 3회 실행했다.
 - Home의 오늘 할 일은 Action 조회 완료 후 표시하며, 별도 자료 Event 조회 완료를 기다리지 않는다. 다가오는 일정은 기존 Event 로딩 상태를 사용한다. 이 로딩 분리 수정은 로컬 브라우저에서 검증했으며 아직 배포하지 않았다.
 - PDF 실제 저장/본문 추출은 성공했으나 Gemini 분석은 GEMINI_UNAVAILABLE로 실패해 PDF Event→Home 전체 흐름은 미완료다. 새 AI 분류는 시작하지 않는다. 상세 결과와 미검증 범위: `docs/reviews/PRE_CLASSIFICATION_CORE_VERIFICATION_20261013.md`.
+
+### 2026-10-13 Gmail 분석 Worker 구현 — 실제 적용/배포 승인 대기
+
+사용자의 후속 요청으로 39절의 브라우저 최대 3건 한정·background queue 미도입 범위를 Gmail에 한해 대체한다.
+새 taxonomy/AI schema/Prompt는 도입하지 않는다. 기존 Gemini client/validator와 원자 저장 RPC를 재사용한다.
+
+- 신규 Gmail canonical text와 변경된 본문은 private 작업에 등록한다. 기존 자료 전체 backfill은 migration에 포함하지 않으며 승인된 테스트 계정만 별도 등록한다.
+- Cloud Run은 private IAM service로 제한하며, Scheduler OIDC 호출마다 최대 3건 처리한다. 명시적 owner allowlist와 기본 OFF flag로 단계 적용한다. 브라우저를 닫아도 DB 작업 상태와 다음 Scheduler 호출로 이어 처리한다.
+- lease/token·ITEM snapshot 검사로 중단 복구와 오래된 결과 저장 차단, 지연 재시도 최대 5회를 제공한다. 인증/검증/설정 오류는 무한 반복하지 않는다. Source/Evidence/user override 보호는 기존 저장 RPC를 유지한다.
+- 202 enqueue 응답은 분석 완료로 표시하지 않는다. 분석 성공 indexing과 검색 색인 완료를 구분한다.
+- 검토용 migration은 로컬 PostgreSQL에서만 검증한다. 실제 DB 적용·IAM/billing 변경·클라우드/앱 배포·commit/push는 사용자 승인 전 진행하지 않는다.
+- 실행/환경/검증 및 rollback 기준: `workers/analysis/README.md`.
+
+### 2026-10-13 무료 API 시연 처리 — 사용자 후속 요청으로 실행 경로 변경
+
+Cloud Run 결제 연결 대신 Supabase Cron → 기존 Vercel Node route를 준비한다. 위 Cloud Run 배포 계획은 보류하며 실제 적용/배포는 별도 승인 전까지 하지 않는다.
+
+- 시연 대상은 승인된 테스트 소유자 1명과 Gmail ITEM 1~3건의 서버 환경 allowlist다. 요청 body로 범위를 확장하지 못한다.
+- `/api/internal/gmail-analysis`는 독립 server-only Bearer secret을 확인한 뒤 한 건만 처리하고 완료를 기다린다. 기본 OFF이며, 키 프로젝트 Free Tier 확인 flag도 필요하다. 익명/일반 로그인 세션은 scheduler 권한이 아니다.
+- 검토용 migration의 private 무료 처리 예산은 DB 잠금으로 전체 인스턴스에 공유한다. 최소 60초 간격, UTC 날짜당 최대 5회 예약이며 실패/중단도 예산을 소비한다. 예산 미달이어도 실제 Gemini quota가 먼저 소진될 수 있다. 일일 5회는 자체 보수적 제한이며 공급자 무료 한도 보장이 아니다.
+- 무료 worker는 Gemini 요청 1회만 실행한다. 429는 Retry-After와 최소 1시간 대기를 적용한다. 성공 결과는 기존 fingerprint/cache로 재사용한다. 과거 전체 메일은 자동 등록하지 않는다.
+- 기존 AI schema/taxonomy/저장 RPC와 validator를 유지한다. 프롬프트는 기존 시간대 근거/원문 인용 규칙을 명확히 한다. 모델이 위치를 추측하지 않도록 provider transport의 locator를 기존 unknown/null 값으로 제한하고, validator가 원문 인용을 검증해 실제 위치를 계산한다. 검증 실패 결과는 저장하지 않는다.
+- 실제 키 프로젝트의 billingEnabled=false를 읽기 전용 확인했다. 현재 설정 모델의 실제 429에는 무료 일일 요청 20회 소진이 보고됐다. 모델별 실제 quota와 가용성은 다를 수 있다.
+- 테스트 계정의 승인된 메일 중 2건을 기존 분석/저장으로 실제 검증했다. 분류와 Source/Evidence 연결 Action이 각각 저장됐으며, 제출 Action의 확정 날짜는 2026-10-18이다. 다른 1건은 인용 검증 실패로 성공 처리하지 않는다. 실제 로그인 화면/Home 반영은 별도 미검증이다.
+- 무료 대안 모델의 실제 분석 성공을 확인한 뒤 로컬 GEMINI_MODEL만 gemini-3.5-flash-lite로 변경했다. 운영 환경/DB migration/Cron/배포는 변경하지 않았다.
+- 상세 검토 및 실행 전제: `docs/reviews/GMAIL_FREE_DEMO_REVIEW_20261013.md`.
+
+### 2026-10-13 승인된 무료 Gmail 시연 배포
+
+- 사용자 승인으로 작업 큐/무료 예산 migration과 pg_cron/pg_net 지원 확장을 연결 DB에 적용한다. 추가 과금/Cloud Run 활성화는 하지 않는다.
+- Cron은 Vault의 인증키를 읽어 120초 유효한 POST 경로/타임스탬프 HMAC만 HTTP 대기열에 보낸다. 장기 인증키는 HTTP 대기열에 넣지 않는다. Vercel은 기존 직접 Bearer 호출도 지원한다.
+- 관리 확장 소유권 때문에 pg_net 기본 queue grants 제한 시도는 실제 권한을 변경하지 못했다. 이를 보안 완료로 간주하지 않고 위 단기 서명으로 장기 키 노출을 피한다.
+- private dispatcher는 명시한 테스트 소유자/메일 범위의 due 작업만 호출한다. 완료/실패로 모두 종료되거나 당일 예산 5회를 소진하면 이번 시연 Cron을 자동 중지한다. 이후 다른 메일 처리나 시연 재실행은 별도 범위 지정/재시작이 필요하다.
+- 비밀값은 Git/로그에 포함하지 않으며, 등록과 실제 배포/검증 상태는 후속 배포 보고서를 따른다.
