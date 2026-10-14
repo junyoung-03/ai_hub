@@ -5,7 +5,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { LibraryList } from "@/components/library/library-list";
 import { LibraryToolbar } from "@/components/library/library-toolbar";
 import { requirePageUser } from "@/lib/supabase/auth";
-import { InvalidItemQueryError, libraryUrl, parseItemQuery } from "@/lib/items/filters";
+import { encodeCursor, InvalidItemQueryError, libraryUrl, parseItemQuery } from "@/lib/items/filters";
 import { listItems, type ItemList } from "@/lib/items/queries";
 import { UploadControls } from "@/components/uploads/upload-controls";
 import { ManualTextControls } from "@/components/items/manual-text-controls";
@@ -14,7 +14,7 @@ import { PageHeading } from "@/components/shell/page-heading";
 
 export default async function LibraryPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user=await requirePageUser();
-  const promotionalEnabled = await promotionalReady();
+  const promotionalPromise = promotionalReady();
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(await searchParams)) {
     if (Array.isArray(value)) value.forEach((entry) => params.append(key, entry));
@@ -35,10 +35,20 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   let atLeast=false;
   try {
     const countParams=new URLSearchParams(params); countParams.delete("cursor"); countParams.set("limit","100");
-    const [page,total]=await Promise.allSettled([listItems(query),listItems(parseItemQuery(countParams))]);
-    if(page.status==="fulfilled")result=page.value;
-    if(total.status==="fulfilled"){count=total.value.items.length;atLeast=!!total.value.nextCursor;}
+    if (!query.position) {
+      const total = await listItems(parseItemQuery(countParams));
+      const items = total.items.slice(0, query.limit);
+      const last = items.at(-1);
+      result = { items, nextCursor: (total.items.length > query.limit || total.nextCursor) && last ? encodeCursor(last, query) : null };
+      count = total.items.length;
+      atLeast = !!total.nextCursor;
+    } else {
+      const [page,total]=await Promise.allSettled([listItems(query),listItems(parseItemQuery(countParams))]);
+      if(page.status==="fulfilled")result=page.value;
+      if(total.status==="fulfilled"){count=total.value.items.length;atLeast=!!total.value.nextCursor;}
+    }
   } catch { /* Keep raw Auth/DB errors out of UI and logs. */ }
+  const promotionalEnabled = await promotionalPromise;
   return <AppShell title="자료함" hideTitle workspace demo>
     <MaterialFocus/>
     <PageHeading title="자료함" description="메일·문서·파일을 한곳에서 확인하세요."><Link href="/library#add-material" className="workspace-primary"><Plus className="size-4" aria-hidden="true"/>자료 추가</Link></PageHeading>

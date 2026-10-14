@@ -3,6 +3,7 @@ import { Constants } from "@/types/database";
 import { documentLabels, formatLabels } from "@/lib/items/presentation";
 import { libraryUrl, type ItemQuery } from "@/lib/items/filters";
 import { workspaceSources } from "@/components/workspace/workspace-ui";
+import { PromotionalToggle } from "@/components/library/promotional-toggle";
 
 export function LibraryToolbar({ query, promotionalEnabled = false }: { query: ItemQuery; promotionalEnabled?: boolean }) {
   const { filters } = query;
@@ -20,9 +21,7 @@ export function LibraryToolbar({ query, promotionalEnabled = false }: { query: I
         </Link>;
       })}
     </nav>
-    {promotionalEnabled && <Link href={libraryUrl({ ...query, filters: { ...filters, includePromotional: filters.includePromotional ? undefined : "true" } })} role="switch" aria-checked={Boolean(filters.includePromotional)} className="inline-flex min-h-9 items-center gap-2 text-xs text-slate-600">
-      <span aria-hidden="true" className={`h-4 w-7 rounded-full border ${filters.includePromotional ? "border-blue-400 bg-blue-200" : "border-slate-300 bg-slate-100"}`}/>광고 포함
-    </Link>}
+    {promotionalEnabled && <PromotionalToggle enabled={Boolean(filters.includePromotional)} href={libraryUrl({ ...query, filters: { ...filters, includePromotional: filters.includePromotional ? undefined : "true" } })}/>}
     <details open={hasFilters}>
       <summary className="w-fit cursor-pointer rounded-lg px-1 py-2 text-xs text-slate-500">분류 · 상세 필터{hasFilters ? " · 적용 중" : ""}</summary>
       <form action="/library" method="get" className="mt-2 space-y-3 rounded-xl border border-slate-200/70 bg-white/80 p-4">
