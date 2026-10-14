@@ -20,6 +20,10 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
     if (Array.isArray(value)) value.forEach((entry) => params.append(key, entry));
     else if (value !== undefined) params.set(key, value);
   }
+  // Keep the presentation account's default Library focused on ready materials.
+  if (user.id === "c05fdc30-bf78-4922-b2bb-af576b3af270" && !params.has("processingStatus")) {
+    params.set("processingStatus", "completed");
+  }
   let query;
   try { query = parseItemQuery(params); }
   catch (error) {
