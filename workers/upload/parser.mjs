@@ -70,6 +70,36 @@ function parseImageHeader(bytes, mime) {
   }
   fail('UNSUPPORTED_FILE');
 }
+// PDF ASCII85 has a mandatory ~> terminator, optional whitespace and zero tuples (z).
+// Bound the intermediate output too, before allocating or inflating another stage.
+function decodeAscii85(bytes, maxBytes) {
+  const out=Buffer.alloc(Math.min(bytes.length*4,maxBytes));
+  let size=0,value=0,digits=0,ended=false;
+  const write=(tuple,count)=>{
+    if(tuple>0xffffffff)fail('INVALID_FILE');
+    if(size+count>maxBytes)fail('FILE_LIMIT');
+    for(let j=0;j<count;j++)out[size++]=Math.floor(tuple/2**(24-j*8))&255;
+  };
+  for(let i=0;i<bytes.length;i++) {
+    const code=bytes[i];
+    if([0,9,10,12,13,32].includes(code))continue;
+    if(ended)fail('INVALID_FILE');
+    if(code===126) {
+      if(bytes[++i]!==62||digits===1)fail('INVALID_FILE');
+      if(digits>1){const count=digits-1;while(digits++<5)value=value*85+84;write(value,count);}
+      ended=true;
+    }else if(code===122) {
+      if(digits)fail('INVALID_FILE');write(0,4);
+    }else {
+      if(code<33||code>117)fail('INVALID_FILE');
+      value=value*85+code-33;
+      if(++digits===5){write(value,4);value=0;digits=0;}
+    }
+  }
+  if(!ended)fail('INVALID_FILE');
+  return out.subarray(0,size);
+}
+
 function scanPdf(bytes){
   const raw=bytes.toString('latin1');
   if(!raw.startsWith('%PDF-')||!/%EOF\s*$/.test(raw))fail('INVALID_FILE');
@@ -100,20 +130,34 @@ function scanPdf(bytes){
     }
     if(checked!==(s.match(/\/Subtype\s*\/Image\b/g)?.length??0))fail('PDF_LAYOUT_NEEDS_REVIEW');
   };
-  reject(raw);let expanded=0;
+  let expanded=0,structuralStart=0;
   // Includes compressed object streams; never interpret scripts or attachment data.
   const re=/<<([\s\S]*?)>>\s*stream(?:\r\n|\r|\n)/g;let m;
   while((m=re.exec(raw))!==null){const end=raw.indexOf('endstream',re.lastIndex);if(end<0)fail('INVALID_FILE');
+    // Stream payloads are data, not PDF object dictionaries. In particular a
+    // binary font can contain incidental /AA bytes with no executable meaning.
+    reject(raw.slice(structuralStart,re.lastIndex));
     const dict=decodedNames(m[1]),chunk=bytes.subarray(re.lastIndex,end);
-    if(/\/ObjStm\b/.test(dict)&&!/\/Filter\s*\/FlateDecode\b/.test(dict))fail('PDF_LAYOUT_NEEDS_REVIEW');
-    if(/\/FlateDecode\b/.test(dict)) {
-      if(/\/Filter\s*\[/.test(dict))fail('PDF_LAYOUT_NEEDS_REVIEW');
+    const filter=/\/Filter\s*(\[[^\]]*\]|\/[^\s<>\[\]()]+)/.exec(dict)?.[1];
+    const flate=/\/FlateDecode\b/.test(dict);
+    if(/\/ObjStm\b/.test(dict)&&!flate)fail('PDF_LAYOUT_NEEDS_REVIEW');
+    if(flate) {
+      // Only these exact chains have a bounded security decoding path here.
+      const single=filter==='/FlateDecode'||/^\[\s*\/FlateDecode\s*\]$/.test(filter??'');
+      const ascii85=/^\[\s*\/ASCII85Decode\s+\/FlateDecode\s*\]$/.test(filter??'');
+      if(!single&&!ascii85)fail('PDF_LAYOUT_NEEDS_REVIEW');
+      let out=chunk;
+      if(ascii85){if(expanded>=limits.expanded)fail('FILE_LIMIT');out=decodeAscii85(out,limits.expanded-expanded);expanded+=out.length;}
       if(expanded>=limits.expanded)fail('FILE_LIMIT');
-      let out;try{out=inflateSync(chunk,{maxOutputLength:limits.expanded-expanded});}catch(error){fail(error.code==='ERR_BUFFER_TOO_LARGE'?'FILE_LIMIT':'INVALID_FILE');}
-      expanded+=out.length;if(expanded>limits.expanded)fail('FILE_LIMIT');reject(out.toString('latin1'));
+      try{out=inflateSync(out,{maxOutputLength:limits.expanded-expanded});}catch(error){fail(error.code==='ERR_BUFFER_TOO_LARGE'?'FILE_LIMIT':'INVALID_FILE');}
+      expanded+=out.length;
+      // Compressed object streams can hide active dictionaries; font/image and
+      // page-content streams cannot define PDF objects. PDF.js checks actions too.
+      if(/\/ObjStm\b/.test(dict))reject(out.toString('latin1'));
     }
-    re.lastIndex=end+9;
+    re.lastIndex=end+9;structuralStart=re.lastIndex;
   }
+  reject(raw.slice(structuralStart));
 }
 export async function inspectBytes(bytes,mime){
   if(!Buffer.isBuffer(bytes)||bytes.length<1||bytes.length>limits.bytes)fail('FILE_LIMIT');

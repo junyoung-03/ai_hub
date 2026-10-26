@@ -3,10 +3,74 @@ import assert from 'node:assert/strict';
 import { load } from './calendar-loader.mjs';
 import { pdfFixture,imageFixture } from './upload-fixtures.mjs';
 import { isolatedInspect } from '../workers/upload/isolate.mjs';
+import { deflateSync } from 'node:zlib';
 const c=load('src/lib/uploads/contract.ts');
 const owner='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',id='33333333-3333-4333-8333-333333333333';
 const plain=v=>JSON.parse(JSON.stringify(v));
 const request=(bytes,mime='application/pdf',fileName='fixture.pdf')=>({size:bytes.length,mimeType:mime,fileName});
+
+// Independent synthetic encoder, including zero tuples and partial final tuples.
+function ascii85Encode(bytes) {
+  let result='';
+  for(let i=0;i<bytes.length;i+=4) {
+    const block=Buffer.alloc(4);bytes.copy(block,0,i,Math.min(i+4,bytes.length));
+    let value=block.readUInt32BE();const count=Math.min(4,bytes.length-i);
+    if(value===0&&count===4){result+='z';continue;}
+    const tuple=Array(5);for(let j=4;j>=0;j--){tuple[j]=String.fromCharCode(value%85+33);value=Math.floor(value/85);}
+    result+=tuple.slice(0,count+1).join('');
+  }
+  return Buffer.from(result+'~>\n','ascii');
+}
+const compressedFixture=(dictionary,encode,pages=['text'])=>pdfFixture(pages,'',{dictionary,encode});
+
+test('PDF Flate name/list and ASCII85 + Flate chain preserve all page text',async()=>{
+  for(const [dictionary,encode] of [
+    ['/Filter /FlateDecode',deflateSync],
+    ['/Filter [ /FlateDecode ]',deflateSync],
+    ['/Filter [ /ASCII85Decode /FlateDecode ]',bytes=>ascii85Encode(deflateSync(bytes))],
+  ]) {
+    const plan=await isolatedInspect(compressedFixture(dictionary,encode,['text','text']),'application/pdf');
+    assert.deepEqual(plan.pages.map(p=>[p.method,p.text]),Array(2).fill(['embedded','Synthetic fixture text']));
+  }
+});
+
+test('compressed object dictionaries still reject active names and oversized images',async()=>{
+  for(const ascii85 of [false,true]) {
+    const dictionary=`/Type /ObjStm /N 1 /First 4 /Filter ${ascii85?'[ /ASCII85Decode /FlateDecode ]':'[ /FlateDecode ]'}`;
+    for(const name of ['JavaScript','J#53','Launch','EmbeddedFile','Filespec','AA','OpenAction','XFA','RichMedia','SubmitForm','GoToR','Prev','Encrypt']) {
+      const encode=()=>{const bytes=deflateSync(Buffer.from(`9 0 << /${name} null >>`));return ascii85?ascii85Encode(bytes):bytes;};
+      await assert.rejects(isolatedInspect(compressedFixture(dictionary,encode),'application/pdf'),{message:name==='Encrypt'?'PDF_ENCRYPTED':'PDF_UNSAFE'});
+    }
+    const encode=()=>{const bytes=deflateSync(Buffer.from('9 0 << /Subtype /Image /Width 10001 /Height 1 >>'));return ascii85?ascii85Encode(bytes):bytes;};
+    await assert.rejects(isolatedInspect(compressedFixture(dictionary,encode),'application/pdf'),{message:'FILE_LIMIT'});
+  }
+});
+
+test('data-stream bytes that resemble active names do not define PDF actions',async()=>{
+  for(const filter of ['/FlateDecode','[ /FlateDecode ]','[ /ASCII85Decode /FlateDecode ]']) {
+    const encode=bytes=>{const zipped=deflateSync(Buffer.concat([bytes,Buffer.from('\n% /AA /JS harmless data\n')]));return filter.includes('ASCII85')?ascii85Encode(zipped):zipped;};
+    const plan=await isolatedInspect(compressedFixture(`/Filter ${filter}`,encode),'application/pdf');
+    assert.equal(plan.pages[0].text,'Synthetic fixture text');
+  }
+});
+
+test('unsupported Flate chains, malformed ASCII85 and invalid zlib stay rejected',async()=>{
+  for(const filter of ['[ /FlateDecode /ASCII85Decode ]','[ /ASCIIHexDecode /FlateDecode ]','[ /ASCII85Decode /FlateDecode /FlateDecode ]','[ /FlateDecode null ]']) {
+    await assert.rejects(isolatedInspect(compressedFixture(`/Filter ${filter}`,deflateSync),'application/pdf'),{message:'PDF_LAYOUT_NEEDS_REVIEW'});
+  }
+  for(const payload of ['!!!!!','!~>','!!z~>','uuuuu~>','v~>','!!!!!~>x','!!!!!~x','z~>']) {
+    await assert.rejects(isolatedInspect(compressedFixture('/Filter [ /ASCII85Decode /FlateDecode ]',()=>Buffer.from(payload)),'application/pdf'),{message:'INVALID_FILE'});
+  }
+});
+
+test('Flate output and ASCII85 intermediate outputs share the aggregate expansion budget',async()=>{
+  // 33 MB per stream: neither stream alone exceeds 64 MB, their sum does.
+  const zipped=deflateSync(Buffer.alloc(33_000_000,32));
+  for(const ascii85 of [false,true]) {
+    const dictionary=`/Filter ${ascii85?'[ /ASCII85Decode /FlateDecode ]':'[ /FlateDecode ]'}`;
+    await assert.rejects(isolatedInspect(compressedFixture(dictionary,()=>ascii85?ascii85Encode(zipped):zipped,['text','text']),'application/pdf'),{message:'FILE_LIMIT'});
+  }
+});
 test('upload request allows exactly one declared file; rejects spoof, path, owner, status, hash and limits',()=>{
   assert.equal(c.parseUploadRequest(request(Buffer.from('x'))).fileName,'fixture.pdf');
   for(const changes of [{fileName:'../x.pdf'},{fileName:'a\\b.pdf'},{fileName:'a.exe'},{fileName:'a.png'},{size:5000001},{size:0},{userId:other},{storagePath:'x'},{processing_status:'completed'},{hash:'x'}])assert.throws(()=>c.parseUploadRequest({...request(Buffer.from('x')),...changes}),c.UploadError);

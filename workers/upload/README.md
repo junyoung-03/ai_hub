@@ -19,6 +19,23 @@ No script evaluation/XFA/annotations/external font URLs. No partial successful t
 A JS heap cap does NOT cap native allocations. Vercel native memory/time/isolation requires actual deployment verification;
 this local child is not a proven replacement for the old Cloud Run container's OS/network boundary.
 
+## PDF compression compatibility fix (2026-10-26)
+
+The approved compatibility fix accepts `/Filter /FlateDecode`, `[ /FlateDecode ]`, and
+`[ /ASCII85Decode /FlateDecode ]`. Other Flate chains remain `PDF_LAYOUT_NEEDS_REVIEW`.
+ASCII85 requires a valid `~>` terminator and rejects invalid characters, misplaced `z`,
+overflowing tuples, incomplete one-digit tuples and trailing non-whitespace.
+Every intermediate decoded output shares the existing aggregate 64MB expansion budget.
+PDF dictionaries and decoded `/ObjStm` dictionaries retain the active-content, encryption,
+attachment and image-size checks. Binary font/image and page-content payloads are data,
+so incidental `/AA` bytes in them are not interpreted as executable dictionary entries.
+PDF.js document/page action and attachment checks remain enabled; partial text is not returned.
+
+Upload errors now show fixed messages by error code and stop displaying an in-progress phase
+after failure. Unknown errors use a generic message; upstream payloads are never rendered.
+Synthetic regression fixtures cover both accepted encodings, compressed forbidden dictionaries,
+invalid encodings and aggregate expansion limits. Personal reproduction PDFs are not fixtures.
+
 `src/lib/uploads/browser/ocr-provider.ts` is a generic provider boundary.
 `BrowserTesseractProvider` owns exactly one Tesseract.js 7.0.0 Web Worker and wraps its pinned Worker message protocol.
 This allows immediate termination during WASM/language initialization, before the public createWorker promise would expose

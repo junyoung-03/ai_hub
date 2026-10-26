@@ -6,6 +6,24 @@ import {isolatedInspect} from '../workers/upload/isolate.mjs';
 import {pdfFixture} from './upload-fixtures.mjs';
 const c=load('src/lib/uploads/contract.ts');
 const page=(number=1,text='한글 English 😀')=>({page:number,text,provider:'tesseract.js',providerVersion:'7.0.0',execution:'client',language:'kor+eng',confidence:0.01});
+
+test('upload failures have actionable messages without exposing arbitrary error content',()=>{
+  const {uploadErrorMessage}=load('src/lib/uploads/browser/error-message.ts');
+  assert.match(uploadErrorMessage('PDF_LAYOUT_NEEDS_REVIEW'),/압축·구조/);
+  assert.match(uploadErrorMessage('PDF_ENCRYPTED'),/암호화/);
+  assert.match(uploadErrorMessage('FILE_LIMIT'),/5MB/);
+  assert.match(uploadErrorMessage('WORKER_UNAVAILABLE'),/재시도/);
+  assert.match(uploadErrorMessage('UPLOAD_CANCELLED'),/취소/);
+  assert.equal(uploadErrorMessage('private upstream payload'),uploadErrorMessage());
+  assert.equal(uploadErrorMessage('__proto__'),uploadErrorMessage());
+});
+
+test('prepare failure preserves the server error code and never invokes OCR',async()=>{
+  const flow=load('src/lib/uploads/browser/flow.ts',{}, {fetch:async()=>Response.json({error:{code:'PDF_LAYOUT_NEEDS_REVIEW'}},{status:422})});
+  let ocrCalls=0;
+  await assert.rejects(flow.runUpload({checkpoint:{uploadId:'fixture',idempotencyKey:'fixture-key'},signal:new AbortController().signal,onCheckpoint:()=>{},onPhase:()=>{},onProgress:()=>{},providerFactory:async()=>{ocrCalls++;throw new Error('unexpected OCR');}}),{message:'PDF_LAYOUT_NEEDS_REVIEW'});
+  assert.equal(ocrCalls,0);
+});
 test('client input rejects missing/duplicate/additional pages and forged ownership/hash/range/provider/execution/version',()=>{
   const plan={mime:'application/pdf',pages:[{page:1,method:'embedded',text:'Server text'},{page:2,method:'ocr'}]};
   const valid=c.parseCompleteInput({pages:[page(2)]});
