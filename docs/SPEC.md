@@ -1234,6 +1234,7 @@ metadata.upload.extraction.status 및 safe Detail page map으로 추출 완료�
 2026-10-26 사용자 승인 보완: 단일 Flate 목록 및 ASCII85→Flate 압축 PDF의 추출 호환성을 지원한다.
 압축 해제 용량 제한과 PDF 구조/압축 객체의 안전 검사를 유지하며, 글꼴 바이너리의 실행 키워드 오탐을 방지한다.
 업로드 실패는 기존 오류 코드별 고정 안내로 원인과 재시도 방법을 표시한다. 상세 지원 범위는 위 parser 문서를 따른다.
+파일 선택 영역 전체는 클릭 및 키보드로 파일 선택창을 열며, 실제 업로드는 별도 업로드/재시도 버튼으로 실행한다. 초기화 버튼은 파일 선택·재시도 기록·결과 안내를 지운다.
 Library에 기능용 upload/progress/cancel/retry 제어만 연결하며 화면 스타일/배치 디자인과 provider별 화면은 만들지 않는다.
 Classification/Action/Deadline/Embedding 및 Gemini 분석은 이 단계에 포함하지 않는다.
 
