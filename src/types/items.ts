@@ -94,6 +94,6 @@ export type ItemDetailResponse = {
   evidence: Evidence[];
   eventObservations: EventObservation[];
   aiAnalysis: AIAnalysis | null;
-  processing: { status: Item["processingStatus"] };
+  processing: import("@/lib/items/processing").ProcessingSummary;
   original: { url: string | null; previewType: "google" | "upload" | "text" };
 };

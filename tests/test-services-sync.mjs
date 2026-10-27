@@ -152,7 +152,7 @@ test("getGoogleServicesSyncSummary maps all 5 statuses, scopes, and timestamps s
   const genErr = await connections.getGoogleServicesSyncSummary("user-1");
   assert.equal(genErr.services.calendar.status, "error");
 
-  // Case 6: Fallback to item timestamps if sync_state timestamps missing
+  // Case 6: Item timestamps cannot establish a successful service checkpoint.
   mockConnection.sync_state.drive.last_synced_at = null;
   mockConnection.sync_state.calendar.last_synced_at = null;
   mockConnection.sync_state.calendar.last_error = null;
@@ -161,8 +161,11 @@ test("getGoogleServicesSyncSummary maps all 5 statuses, scopes, and timestamps s
     { source: "calendar", created_at: "2026-10-05T06:00:00Z" },
   ];
   const fallbackConn = await connections.getGoogleServicesSyncSummary("user-1");
-  assert.equal(fallbackConn.services.drive.lastSyncedAt, "2026-10-05T02:00:00Z");
-  assert.equal(fallbackConn.services.calendar.lastSyncedAt, "2026-10-05T06:00:00Z");
+  assert.equal(fallbackConn.services.drive.lastSyncedAt, null);
+  assert.equal(fallbackConn.services.calendar.lastSyncedAt, null);
+  mockConnection.sync_state.gmail = {};
+  const noGmailCheckpoint = await connections.getGoogleServicesSyncSummary("user-1");
+  assert.equal(noGmailCheckpoint.services.gmail.lastSyncedAt, null);
 });
 
 test("sequential full-sync continues execution even when earlier services fail", async () => {

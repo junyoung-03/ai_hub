@@ -2,6 +2,8 @@ import "server-only";
 import { promotionalReady, missingPromotionalContract } from "@/lib/items/promotional-gate";
 import { calendarDetail } from "@/lib/google/calendar-contract";
 import { uploadDetail } from "@/lib/uploads/contract";
+import { projectProcessing } from "@/lib/items/processing-queries";
+import type { ProcessingSummary } from "@/lib/items/processing";
 
 import { requireUser } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/server";
@@ -17,7 +19,7 @@ export class ItemReadError extends Error {
 }
 
 const classificationColumns = "ai_primary_topic,user_primary_topic,ai_document_type,user_document_type,ai_tags,user_tags";
-const itemColumns = "id,title,source,format,processing_status,created_at,source_created_at";
+const itemColumns = "id,title,source,format,processing_status,processing_error,created_at,updated_at,source_created_at,content_text,upload_extraction:metadata->upload->extraction";
 
 const relatedPageSize = 500;
 async function readRelatedPages<T extends { id: string }>(fetchPage: (after?: string) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
@@ -35,7 +37,7 @@ async function readRelatedPages<T extends { id: string }>(fetchPage: (after?: st
 export async function listItems(input: ItemQuery) {
   return readItems(input, false);
 }
-type ListedItem = { id: string; title: string; source: import("@/types/database").Enums<"item_source">; format: import("@/types/database").Enums<"item_format">; processingStatus: import("@/types/database").Enums<"processing_status">; createdAt: string; sourceCreatedAt: string | null; classification: ReturnType<typeof effectiveClassification> };
+type ListedItem = { id: string; title: string; source: import("@/types/database").Enums<"item_source">; format: import("@/types/database").Enums<"item_format">; processingStatus: import("@/types/database").Enums<"processing_status">; processing?: ProcessingSummary; createdAt: string; sourceCreatedAt: string | null; classification: ReturnType<typeof effectiveClassification> };
 async function readItems(input: ItemQuery, forceLegacy: boolean): Promise<{ items: ListedItem[]; nextCursor: string | null }> {
   const user = await requireUser();
   const supabase = await createClient();
@@ -75,9 +77,11 @@ async function readItems(input: ItemQuery, forceLegacy: boolean): Promise<{ item
   const { data, error } = await query.order("created_at", { ascending: false }).order("id", { ascending: false }).limit(limit + 1);
   if (promotional && missingPromotionalContract(error)) return readItems(input, true);
   if (error || !data) throw new ItemReadError();
+  const processing = await projectProcessing(supabase, data.slice(0, limit), user.id);
   const items = data.slice(0, limit).map((row) => ({
     id: row.id, title: row.title, source: row.source, format: row.format,
     processingStatus: row.processing_status, createdAt: row.created_at, sourceCreatedAt: row.source_created_at,
+    processing: processing.get(row.id),
     classification: effectiveClassification(Array.isArray(row.classification) ? row.classification[0] ?? null : row.classification),
   }));
   const last = items.at(-1);
@@ -114,10 +118,11 @@ export async function getItemDetail(itemId: string): Promise<ItemDetailResponse 
   if (!isItemId(itemId)) return null;
   const supabase = await createClient();
   const { data: item, error: itemError } = await supabase.from("items")
-    .select("id,title,source,format,processing_status,created_at,updated_at,content_text,original_url,source_created_at,metadata")
+    .select("id,title,source,format,processing_status,processing_error,created_at,updated_at,content_text,original_url,source_created_at,metadata")
     .eq("user_id", user.id).eq("id", itemId).maybeSingle();
   if (itemError) throw new ItemReadError();
   if (!item) return null;
+  const processing = await projectProcessing(supabase, [item], user.id);
   const [classificationResult, initialItemSources] = await Promise.all([
     supabase.from("classifications")
       .select(classificationColumns)
@@ -184,7 +189,7 @@ export async function getItemDetail(itemId: string): Promise<ItemDetailResponse 
     userClassification: classification && effective.origin === "user" ? { primaryTopic: classification.user_primary_topic,
       documentType: classification.user_document_type, tags: classification.user_tags } : null,
     actions, evidence, ...storedAnalysis(item.metadata, item.content_text, analysisDateContext(item)),
-    processing: { status: item.processing_status },
+    processing: processing.get(item.id)!,
     original: { url: google ? safeOriginalUrl(item.original_url) : null, previewType: google ? "google" as const : item.source === "upload" ? "upload" as const : "text" as const },
   };
 }

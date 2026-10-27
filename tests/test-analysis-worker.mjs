@@ -92,14 +92,14 @@ test('authenticated Gmail API enqueues the approved owner without calling Gemini
   const api=load('src/lib/items/analysis.ts',{'@/lib/gemini/validation':validator,'@/lib/gemini/client':client,
     '@/lib/items/analysis-failure':failure,'@/lib/items/filters':{isItemId:()=>true},
     '@/lib/supabase/auth':{requireUser:async()=>({id:owner})},
-    '@/lib/supabase/server':{createClient:async()=>({from:()=>q,rpc:async(name,args)=>{calls++;assert.equal(name,'enqueue_gmail_analysis');assert.equal(args.p_user_id,owner);assert.deepEqual(Array.from(args.p_item_ids),[id(1)]);return {data:1,error:null};}})},
+    '@/lib/supabase/server':{createClient:async()=>({from:()=>q,rpc:async(name,args)=>{calls++;assert.equal(name,'request_gmail_analysis');assert.equal(args.p_item_id,id(1));return {data:{state:'pending',processingStatus:'queued'},error:null};}})},
     '@/lib/supabase/admin':{createAdminClient:()=>{throw new Error('must not write');}}},
-    {process:{env:{GMAIL_ANALYSIS_WORKER_ENABLED:'true',GMAIL_ANALYSIS_ALLOWED_USERS:owner}}});
+    {process:{env:{GMAIL_ANALYSIS_WORKER_ENABLED:'true',GMAIL_ANALYSIS_ALLOWED_USERS:owner,GMAIL_ANALYSIS_DEMO_ITEM_IDS:id(1),GEMINI_FREE_TIER_CONFIRMED:'true',GMAIL_ANALYSIS_CRON_SECRET:'s'.repeat(40)}}});
   assert.equal((await api.analyzeOwnedItem(id(1))).queued,true);assert.equal(calls,1);
 });
 
 test('queue SQL: real persistence, leases, retries, owner boundary, source/evidence and User Edited protection',async t=>{
-  const db=await noiseDb();
+  const db=await noiseDb({migrated:false});
   const scalar=async(sql,args=[])=>Object.values((await db.query(sql,args)).rows[0])[0];
   const claim=()=>scalar('select public.claim_gmail_analysis_job($1::uuid[])',[[owner]]);
   const finish=(j,result=null,error=null,retry=null)=>scalar('select public.finish_gmail_analysis_job($1,$2,$3,$4::jsonb,$5,$6,$7,$8)',[

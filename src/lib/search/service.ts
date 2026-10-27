@@ -7,7 +7,7 @@ import { ACTIVE_EMBEDDING, SEARCH_LIMITS, SearchError, cursorContext, decodeCurs
 import { chunkItem, type SearchItem } from "./chunker";
 import { createEmbeddingProvider, semanticItemAllowed, validateVector, type EmbeddingProvider } from "./provider";
 
-type RpcName = "search_runtime" | "search_index" | "search_candidates" | "search_candidates_promotional" | "search_similar" | "search_similar_promotional" | "search_coverage";
+type RpcName = "search_runtime" | "search_index" | "retry_search_index" | "search_candidates" | "search_candidates_promotional" | "search_similar" | "search_similar_promotional" | "search_coverage";
 type Admin = ReturnType<typeof createAdminClient>;
 // Local typed RPC adapter until the applied migration is reflected in generated DB types.
 export function searchStore(admin: Admin = createAdminClient()) {
@@ -174,19 +174,39 @@ export async function indexItem(itemId: string, provider: EmbeddingProvider = cr
     || provider.identity.provider !== ACTIVE_EMBEDDING.provider || provider.identity.model !== ACTIVE_EMBEDDING.model) throw new SearchError("EMBEDDING_VERSION_MISMATCH", 503);
   const user = await requireUser(); if (!uuid(itemId)) throw new SearchError("NOT_FOUND", 404);
   const store = injected ?? searchStore(); await consumeRate(store, user.id, "index");
-  const { data: item, error } = await store.admin.from("items").select("id,user_id,title,content_text,source,metadata,updated_at").eq("user_id", user.id).eq("id", itemId).maybeSingle();
+  const { data: item, error } = await store.admin.from("items").select("id,user_id,title,content_text,source,metadata,processing_status,updated_at").eq("user_id", user.id).eq("id", itemId).maybeSingle();
   if (error) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503); if (!item) throw new SearchError("NOT_FOUND", 404);
   const call = async (op: string, payload: unknown = {}, attempt?: string) => record(await store.call("search_index", {
     p_op: op, p_user_id: user.id, p_item_id: itemId, p_version: ACTIVE_EMBEDDING.version, p_payload: payload as Json, p_attempt: attempt }));
   let prepared: ReturnType<typeof chunkItem>;
   try { prepared = chunkItem(item as SearchItem); } catch (e) { if (e instanceof SearchError && ["TEXT_LIMIT", "CHUNK_LIMIT"].includes(e.code)) { await call("skip"); return { state: "skipped_limit" }; } throw e; }
-  if (retry) await call("reset_retry");
+  if (retry) {
+    // An explicit retry can reset exhausted attempts, but never bypass the provider cooldown.
+    const resumed = record(await store.call("retry_search_index", { p_user_id: user.id, p_item_id: itemId, p_version: ACTIVE_EMBEDDING.version }));
+    if (resumed.state !== "pending") return resumed;
+  }
   const semantic = semanticItemAllowed(itemId), claim = await call("claim", { fingerprint: prepared.fingerprint, snapshot: item.updated_at, chunkCount: prepared.chunks.length, semantic });
   const markReady = async () => {
+    // Search is also available before AI analysis and for Calendar. Preserve that
+    // independent indexing contract, but verify its snapshot before reporting success.
+    if (item.processing_status !== "indexing") {
+      const { data: unchanged, error: readError } = await store.admin.from("items").select("id")
+        .eq("user_id", user.id).eq("id", itemId).eq("updated_at", item.updated_at).eq("processing_status", item.processing_status).maybeSingle();
+      if (readError) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503);
+      if (!unchanged) throw new SearchError("STALE_INPUT", 409);
+      return;
+    }
     // Never mark newer source content, failed analysis, or a running analysis ready.
-    const { error: statusError } = await store.admin.from("items").update({ processing_status: "completed", processing_error: null })
-      .eq("user_id", user.id).eq("id", itemId).eq("updated_at", item.updated_at).eq("processing_status", "indexing");
+    const { data: ready, error: statusError } = await store.admin.from("items").update({ processing_status: "completed", processing_error: null })
+      .eq("user_id", user.id).eq("id", itemId).eq("updated_at", item.updated_at).eq("processing_status", "indexing").select("id").maybeSingle();
     if (statusError) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503);
+    if (!ready) {
+      // A cached, already-completed revision is idempotent; every other zero-row CAS is stale.
+      const { data: current, error: readError } = await store.admin.from("items").select("id")
+        .eq("user_id", user.id).eq("id", itemId).eq("updated_at", item.updated_at).eq("processing_status", "completed").maybeSingle();
+      if (readError) throw new SearchError("SEARCH_STORAGE_UNAVAILABLE", 503);
+      if (!current) throw new SearchError("STALE_INPUT", 409);
+    }
   };
   if (claim.state !== "claimed") { if (claim.state === "complete") await markReady(); return claim; }
   const attempt = String(claim.attempt), start = Number(claim.nextChunk), end = Math.min(start + SEARCH_LIMITS.cycle, prepared.chunks.length), endsAt = Date.now() + 35_000;
