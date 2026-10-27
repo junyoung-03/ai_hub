@@ -2,7 +2,7 @@
 import {createClient} from '@supabase/supabase-js';
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {loadSearch} from './search-loader.mjs';
+import {loadSearch} from '../tests/helpers/search-loader.mjs';
 const args=process.argv.slice(2),user=args[args.indexOf('--user')+1],semantic=args.includes('--semantic-non-sensitive');
 if(!args.includes('--user')||!/^\w{8}-(?:\w{4}-){3}\w{12}$/.test(user??''))throw new Error('Explicit --user UUID required; one bounded cycle only.');
 if(semantic&&process.env.SEARCH_SEMANTIC_ENABLED!=='true')throw new Error('Semantic processing disabled.');

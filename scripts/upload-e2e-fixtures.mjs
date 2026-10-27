@@ -2,7 +2,7 @@
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {createCanvas,GlobalFonts} from '@napi-rs/canvas';
 import sharp from 'sharp';
-import {pdfFixture} from './upload-fixtures.mjs';
+import {pdfFixture} from '../tests/helpers/upload-fixtures.mjs';
 const directory='supabase/.temp/upload3-fixtures';mkdirSync(directory,{recursive:true});
 GlobalFonts.loadSystemFonts();
 const canvas=createCanvas(1000,300),context=canvas.getContext('2d');context.fillStyle='white';context.fillRect(0,0,1000,300);context.fillStyle='black';context.font='48px "Malgun Gothic", sans-serif';

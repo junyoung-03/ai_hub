@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {existingGoogleTest} from './google-live-loader.mjs';
-import {load} from './calendar-loader.mjs';
-import {loadAnalysisModule} from './analysis-loader.mjs';
+import {load} from '../tests/helpers/calendar-loader.mjs';
+import {loadAnalysisModule} from '../tests/helpers/analysis-loader.mjs';
 try {
  const context=await existingGoogleTest();
  const filters=load('src/lib/items/filters.ts',{'@/types/database':load('src/types/database.ts')});

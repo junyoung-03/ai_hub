@@ -56,7 +56,7 @@ Migration 자체는 기존 메일을 일괄 등록하거나 Gemini를 호출하�
 
 ```
 npm run build:analysis-worker
-node --test scripts/test-analysis-worker.mjs
+node --test tests/test-analysis-worker.mjs
 npm test
 npm run typecheck
 npm run lint

@@ -2,7 +2,7 @@
 // No Supabase access/writes, collection, uploads, backfill or separate noise requests.
 import nextEnv from '@next/env';
 import assert from 'node:assert/strict';
-import {loadAnalysisModule as load} from './analysis-loader.mjs';
+import {loadAnalysisModule as load} from '../tests/helpers/analysis-loader.mjs';
 if(!process.argv.includes('--gemini')){console.error('NOT RUN: --gemini opt-in required');process.exit(2);}
 nextEnv.loadEnvConfig(process.cwd());
 const validator=load('src/lib/gemini/validation.ts');

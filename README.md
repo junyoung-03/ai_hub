@@ -176,7 +176,9 @@ npm run lint
 npm run build
 ```
 
-`npm test`는 외부 서비스·실제 DB에 접근하지 않는 격리 테스트입니다. 실연결·SQL·저장 데이터 검증은 [테스트 안내](scripts/README.md)에 별도로 설명되어 있습니다. 실제 데이터 변경이나 AI 호출을 하는 스크립트는 영향 범위를 확인한 뒤 실행해야 합니다.
+테스트 코드는 `tests/`, 테스트 보조 파일은 `tests/helpers/`, 빌드·배포·운영 도구는 `scripts/`에서 관리합니다.
+
+`npm test`는 외부 서비스·실제 DB에 접근하지 않는 격리 테스트입니다. 실연결·SQL·저장 데이터 검증은 [테스트 안내](tests/README.md)에 별도로 설명되어 있습니다. 실제 데이터 변경이나 AI 호출을 하는 스크립트는 영향 범위를 확인한 뒤 실행해야 합니다.
 
 ## Repository Structure
 
@@ -196,8 +198,11 @@ ai_hub/
 │   └── README.md          SQL 적용 범위와 주의사항
 ├── workers/
 │   └── upload/            Cloud Run 업로드 파서와 OCR 처리
-├── scripts/               격리 테스트·실연결 검증·운영 도구
+├── scripts/               빌드·배포·데이터 관리·운영 도구
 ├── tests/
+│   ├── test-*.mjs         격리·SQL·실연결 테스트
+│   ├── helpers/           테스트 로더와 합성 자료 생성 도구
+│   ├── types/             컴파일 전용 타입 계약 검사
 │   └── fixtures/          테스트용 합성 파일과 SQL fixture
 ├── docs/
 │   ├── SPEC.md            서비스·개발 기준

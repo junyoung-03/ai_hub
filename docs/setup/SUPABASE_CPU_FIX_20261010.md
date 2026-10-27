@@ -81,7 +81,7 @@ Production shared DB: upload error handling changed as described above
 
 2026-10-10 사용자가 Upload CPU fix만 commit/main 일반 push 및 Vercel CLI Production 1회 배포를 승인했다. 나머지 6개 함수는 이번 단계에서도 변경하지 않는다.
 최종 pre-deploy 검증은 HTTP route 수준의 PT409→409 테스트를 추가해 npm test 176개 및 typecheck/lint/build/diff-check/격리 Upload SQL이 모두 PASS다.
-`UPLOAD_PRODUCTION_SMOKE=YES node scripts/test-upload-production-smoke.mjs`는 합성 계정의 실제 SSR 세션 쿠키로 운영 HTTP create/prepare/complete/reuse/analyze/ITEM GET을 호출한다.
+`UPLOAD_PRODUCTION_SMOKE=YES node tests/test-upload-production-smoke.mjs`는 합성 계정의 실제 SSR 세션 쿠키로 운영 HTTP create/prepare/complete/reuse/analyze/ITEM GET을 호출한다.
 OCR은 실제 Tesseract.js kor+eng의 로컬 Node driver로 수행하며 브라우저 UI/Worker E2E 성공을 주장하지 않는다. 원본·계정은 정확한 합성 대상만 정리한다.
 운영에서는 stale 오류를 의도적으로 생성하지 않는다. 서버 매핑은 route regression과 배포 commit으로 검증하고 운영 로그의 503 오매핑을 확인한다.
 배포 후 smoke 증거는 ignored `supabase/.temp/upload-cpu-production-result.json`, 최종 배포·로그 결과는 채팅 최종 보고에 남긴다. 기존 README 보강은 제외한다.

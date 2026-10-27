@@ -1,7 +1,7 @@
 // Operator-only real demo. Existing analysis/storage, explicit single owner + 1-3 IDs.
 // Never impersonates browser cookies; this verifies the server/DB flow only.
 import nextEnv from '@next/env';
-import {loadAnalysisModule as load} from './analysis-loader.mjs';
+import {loadAnalysisModule as load} from '../tests/helpers/analysis-loader.mjs';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 nextEnv.loadEnvConfig(process.cwd());

@@ -44,4 +44,4 @@ G1은 Gmail 장학금 안내, D1/D2는 Drive 상담 관련 자료, C1은 Calenda
 
 ## 실행 도구
 
-[테스트 안내](../../scripts/README.md)를 참고한다. `npm run test:search`는 격리 검사이며 `scripts/test-search-live.mjs`, `scripts/test-search-backfill-live.mjs`, `scripts/test-search-stored-regression.mjs`는 별도 환경·데이터 승인 조건을 확인한 뒤 실행한다.
+[테스트 안내](../../tests/README.md)를 참고한다. `npm run test:search`는 격리 검사이며 `tests/test-search-live.mjs`, `tests/test-search-backfill-live.mjs`, `tests/test-search-stored-regression.mjs`는 별도 환경·데이터 승인 조건을 확인한 뒤 실행한다.
