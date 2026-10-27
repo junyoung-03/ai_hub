@@ -7,6 +7,7 @@ import { workspaceSources } from "@/components/workspace/workspace-ui";
 import { documentLabels } from "@/lib/items/presentation";
 
 function processingLabel(item: LibraryItem) {
+  if (item.processing) return { label: item.processing.label, color: item.processing.canPoll ? "bg-blue-500" : !item.processing.canAnalyze && item.processingStatus !== "completed" ? "bg-slate-400" : item.processingStatus === "failed" ? "bg-red-500" : item.processingStatus === "completed" ? "bg-emerald-500" : "bg-slate-300" };
   switch (item.processingStatus) {
     case "failed": return { label: "분석 실패 · 상세에서 확인", color: "bg-red-500" };
     case "analyzing": return { label: "분석 중", color: "bg-blue-500" };
@@ -38,7 +39,7 @@ export function LibraryList({ items, toolbar, filtered = false }: { items: Libra
           </div></div>
           <span className="text-xs text-slate-500">{source?.label ?? item.source}</span>
           <time dateTime={item.createdAt} className="text-xs text-slate-500">{shortDate(item.createdAt)}</time>
-          <span className="inline-flex items-center justify-end gap-2 text-xs text-slate-500 lg:justify-start"><span className={`size-1.5 shrink-0 rounded-full ${status.color}`} aria-hidden="true"/>{status.label}</span>
+          <span className="inline-flex items-center justify-end gap-2 text-xs text-slate-500 lg:justify-start" title={item.processing?.message}><span className={`size-1.5 shrink-0 rounded-full ${status.color}`} aria-hidden="true"/>{status.label}</span>
         </Link></li>;
       })}</ul>
       {!items.length && <div className="px-6 py-16 text-center"><FileText className="mx-auto mb-4 size-7 text-slate-300" aria-hidden="true"/><h2 className="font-semibold text-slate-800">{filtered ? "조건에 맞는 자료가 없습니다." : "아직 자료가 없습니다."}</h2><p className="mt-2 text-sm text-slate-500">{filtered ? "출처나 필터 조건을 변경해보세요." : "메일·문서·파일을 추가해보세요."}</p><Link href={filtered ? "/library" : "/library#add-material"} className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600">{!filtered && <Plus className="size-4"/>}{filtered ? "필터 초기화" : "자료 추가"}</Link></div>}

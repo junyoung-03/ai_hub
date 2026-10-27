@@ -53,7 +53,29 @@ test('Library toggle changes cursor context, resets pagination, preserves source
  assert.throws(()=>filters.parseItemQuery(new URLSearchParams('source=gmail&from=2026-10-01&includePromotional=true&cursor='+cursor)));
  assert.throws(()=>filters.parseItemQuery(new URLSearchParams('includePromotional=invalid')));
  const {LibraryToolbar}=ui('src/components/library/library-toolbar.tsx');const html=renderToStaticMarkup(React.createElement(LibraryToolbar,{query:off,promotionalEnabled:true}));
- assert.match(html,/광고 포함/);assert.match(html,/includePromotional=true/);assert.doesNotMatch(html,/cursor=/);
+ assert.match(html,/광고 포함/);assert.match(html,/role="switch" aria-checked="false"/);
+ // The existing switch navigates from its click handler; its href is not rendered in HTML.
+ // Exercise the real Toolbar URL construction and real PromotionalToggle handler in both directions.
+ for(const [query,enabled] of [[off,false],[on,true]]){
+  const navigation=[],optimistic=[];let pending=false;
+  const interactive=uiLoader({...gate,react:{...React,
+   useTransition:()=>[pending,callback=>callback()],useOptimistic:value=>[value,next=>optimistic.push(next)]},
+   'next/navigation':{useRouter:()=>({replace:(href,options)=>navigation.push({href,options})})}});
+  const {LibraryToolbar:Toolbar}=interactive('src/components/library/library-toolbar.tsx');
+  const {PromotionalToggle}=interactive('src/components/library/promotional-toggle.tsx');
+  const pageCursor=filters.encodeCursor({createdAt:'2026-10-12T00:00:00Z',id:'11111111-1111-4111-8111-111111111111'},query);
+  const paged=filters.parseItemQuery(new URL(filters.libraryUrl(query,pageCursor),'https://synthetic.invalid').searchParams);
+  const toggle=Toolbar({query:paged,promotionalEnabled:true}).props.children.find(child=>child?.type===PromotionalToggle);
+  assert.ok(toggle,'Toolbar exposes the real promotional switch');
+  const button=PromotionalToggle(toggle.props);
+  assert.equal(button.props.role,'switch');assert.equal(button.props['aria-checked'],enabled);assert.equal(button.props.disabled,false);
+  button.props.onClick();assert.deepEqual(optimistic,[!enabled]);assert.equal(navigation.length,1);
+  assert.deepEqual(plain(navigation[0].options),{scroll:false});
+  const target=new URL(navigation[0].href,'https://synthetic.invalid');
+  assert.equal(target.pathname,'/library');assert.equal(target.searchParams.get('source'),'gmail');assert.equal(target.searchParams.get('from'),'2026-10-01');
+  assert.equal(target.searchParams.has('cursor'),false);assert.equal(target.searchParams.get('includePromotional'),enabled?null:'true');
+  pending=true;const busy=PromotionalToggle(toggle.props);assert.equal(busy.props.disabled,true);assert.equal(busy.props['aria-busy'],true);
+ }
  const requests=[];const client=createClient('https://synthetic.invalid','fixture',{auth:{persistSession:false},global:{fetch:async(url)=>{requests.push(new URL(url));return Response.json([]);}}});
  const queries=uiLoader({...gate,'@/lib/supabase/auth':{requireUser:async()=>({id:'owner'})},'@/lib/supabase/server':{createClient:async()=>client}})('src/lib/items/queries.ts');
  await queries.listItems(off);await queries.listItems(on);

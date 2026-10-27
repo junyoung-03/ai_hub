@@ -11,18 +11,15 @@ import { UploadControls } from "@/components/uploads/upload-controls";
 import { ManualTextControls } from "@/components/items/manual-text-controls";
 import { MaterialFocus } from "@/components/library/material-focus";
 import { PageHeading } from "@/components/shell/page-heading";
+import { ProcessingRefresh } from "@/components/items/processing-refresh";
 
 export default async function LibraryPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const user=await requirePageUser();
+  const user = await requirePageUser();
   const promotionalPromise = promotionalReady();
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(await searchParams)) {
     if (Array.isArray(value)) value.forEach((entry) => params.append(key, entry));
     else if (value !== undefined) params.set(key, value);
-  }
-  // Keep the presentation account's default Library focused on ready materials.
-  if (user.id === "c05fdc30-bf78-4922-b2bb-af576b3af270" && !params.has("processingStatus")) {
-    params.set("processingStatus", "completed");
   }
   let query;
   try { query = parseItemQuery(params); }
@@ -50,6 +47,7 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   } catch { /* Keep raw Auth/DB errors out of UI and logs. */ }
   const promotionalEnabled = await promotionalPromise;
   return <AppShell title="자료함" hideTitle workspace demo>
+    {result && <ProcessingRefresh items={result.items.flatMap(item => item.processing ? [{ id: item.id, processing: item.processing }] : [])}/>}
     <MaterialFocus/>
     <PageHeading title="자료함" description="메일·문서·파일을 한곳에서 확인하세요."><Link href="/library#add-material" className="workspace-primary"><Plus className="size-4" aria-hidden="true"/>자료 추가</Link></PageHeading>
     {!result&&<LibraryToolbar query={query} promotionalEnabled={promotionalEnabled}/>}

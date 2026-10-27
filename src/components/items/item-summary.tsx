@@ -2,6 +2,7 @@ import { documentLabels, formatLabels, sourceLabels, statusLabels, formatTimesta
 import type { ItemDetail, ItemList } from "@/lib/items/queries";
 import Link from "next/link";
 import { FormatPreview } from "@/components/search/search-results";
+import type { ProcessingSummary } from "@/lib/items/processing";
 
 export function ItemCard({ item, tile = false }: { item: ItemList["items"][number]; tile?: boolean }) {
   return <Link href={`/items/${item.id}`} className={tile ? "flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3 transition-colors hover:bg-canvas" : "flex min-w-0 items-center gap-3 px-3 py-3 transition-colors hover:bg-canvas"}>
@@ -10,8 +11,8 @@ export function ItemCard({ item, tile = false }: { item: ItemList["items"][numbe
   </Link>;
 }
 
-export function ProcessingStatus({ status }: { status: ItemList["items"][number]["processingStatus"] }) {
-  return <span className={`inline-flex text-xs ${status === "failed" ? "rounded bg-rose-soft px-1.5 text-rose" : status === "completed" ? "text-green" : "text-faint"}`}>{statusLabels[status]}</span>;
+export function ProcessingStatus({ status, summary }: { status: ItemList["items"][number]["processingStatus"]; summary?: ProcessingSummary }) {
+  return <span className={`inline-flex text-xs ${status === "failed" ? "rounded bg-rose-soft px-1.5 text-rose" : status === "completed" ? "text-green" : "text-faint"}`}>{summary?.label ?? statusLabels[status]}</span>;
 }
 
 export function ClassificationSummary({ value, detailed = false }: { value: ItemDetail["classification"]; detailed?: boolean }) {
@@ -27,11 +28,11 @@ export function ClassificationSummary({ value, detailed = false }: { value: Item
   );
 }
 
-export function ItemMetadata({ item }: { item: ItemList["items"][number] | ItemDetail["item"] }) {
+export function ItemMetadata({ item, processing }: { item: ItemList["items"][number] | ItemDetail["item"]; processing?: ProcessingSummary }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-muted-foreground">
       <span>{sourceLabels[item.source]}</span><span>·</span><span>{formatLabels[item.format]}</span>
-      <ProcessingStatus status={item.processingStatus} />
+      <ProcessingStatus status={item.processingStatus} summary={processing} />
       {item.source === "gmail" && item.sourceCreatedAt && <time dateTime={item.sourceCreatedAt}>메일 날짜: {formatTimestamp(item.sourceCreatedAt)}</time>}
       <time dateTime={item.createdAt}>추가: {formatTimestamp(item.createdAt)}</time>
     </div>

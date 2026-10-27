@@ -92,9 +92,12 @@ test("Library keeps search and source tabs with collapsed existing classificatio
   assert.match(html, /직접입력/);
   assert.match(html, /<details>/);
   for (const name of ["topic", "documentType"]) assert.match(html, new RegExp(`name="${name}"`));
-  assert.doesNotMatch(html, /name="processingStatus"/);
+  assert.equal((html.match(/name="processingStatus"/g) ?? []).length, 1);
+  assert.match(html, /<select name="processingStatus"/);
+  assert.match(html, /모든 처리 상태/);
   const filtered = render(LibraryToolbar, { query: parseItemQuery(new URLSearchParams("source=calendar&topic=공지&documentType=notice&processingStatus=failed&format=text&limit=10")) });
-  assert.match(filtered, /페이지 주소의 처리 상태 조건/);
+  assert.match(filtered, /처리 상태: 실패/);
+  assert.match(filtered, /<option value="failed" selected="">실패<\/option>/);
   assert.match(filtered, /name="topic"/);
   assert.match(filtered, /<details open="">/);
   assert.match(filtered, /href="\/library\?source=calendar&amp;limit=10"/);

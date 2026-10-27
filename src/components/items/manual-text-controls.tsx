@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { readIndexProgress } from '@/lib/search/index-progress';
 
 export function ManualTextControls({ userId }: { userId?: string } = {}) {
   const router = useRouter();
@@ -48,15 +49,17 @@ export function ManualTextControls({ userId }: { userId?: string } = {}) {
       // 2. AI Analysis
       setStatusText('AI 분석 중...');
       let analysisSucceeded = false;
+      let analysisQueued = false;
       try {
         const analyzeRes = await fetch(`/api/v1/items/${itemId}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: '{}',
         });
-        if (analyzeRes.ok) {
-          analysisSucceeded = true;
-        }
+        const analysis: unknown = await analyzeRes.json().catch(() => null);
+        const analysisState = analysis && typeof analysis === 'object' && 'processing_status' in analysis ? analysis.processing_status : null;
+        analysisQueued = analyzeRes.ok && (analyzeRes.status === 202 || analysisState === 'queued' || analysisState === 'analyzing');
+        analysisSucceeded = analyzeRes.ok && !analysisQueued && (analysisState === 'indexing' || analysisState === 'completed');
       } catch {
         analysisSucceeded = false;
       }
@@ -65,15 +68,18 @@ export function ManualTextControls({ userId }: { userId?: string } = {}) {
       if (analysisSucceeded) {
         setStatusText('검색 색인 중...');
         try {
-          await fetch(`/api/v1/items/${itemId}/index`, {
+          const indexResponse = await fetch(`/api/v1/items/${itemId}/index`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: '{}',
           });
+          const progress = await readIndexProgress(indexResponse);
+          setStatusText(`저장 및 AI 분석 완료 · ${progress.message}`);
         } catch {
-          // Indexing failure is non-fatal to item integrity
+          setStatusText('저장 및 AI 분석 완료 · 검색 준비에 실패했습니다. 상세에서 재시도해 주세요.');
         }
-        setStatusText('저장 및 AI 분석 완료');
+      } else if (analysisQueued) {
+        setStatusText('저장 완료 · AI 분석 요청이 접수되었습니다. 상세에서 처리 상태를 확인하세요.');
       } else {
         setStatusText('저장 완료 · AI 분석 실패 (상세 페이지에서 재시도할 수 있습니다)');
       }

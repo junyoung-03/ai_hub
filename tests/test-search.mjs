@@ -9,7 +9,7 @@ test('finished indexing clears only the same owner and revision waiting status, 
  const service=loadSearch('src/lib/search/service.ts',{'@/lib/supabase/auth':{requireUser:async()=>({id:owner})},'@/lib/supabase/admin':{createAdminClient:()=>null}});
  for(const cached of [false,true]){
   const predicates=[],operations=[];let patch;
-  const item={id,user_id:owner,title:'Synthetic',content_text:'Synthetic searchable text',source:'gmail',metadata:{},updated_at:'revision-one'};
+  const item={id,user_id:owner,title:'Synthetic',content_text:'Synthetic searchable text',source:'gmail',metadata:{},processing_status:'indexing',updated_at:'revision-one'};
   const store={admin:{from(table){const q={select(){return q;},eq(k,v){if(patch)predicates.push([k,v]);return q;},limit(){return q;},update(v){patch=v;return q;},maybeSingle:async()=>({data:item}),then(resolve){return Promise.resolve({data:table==='search_chunks'?[]:null,error:null}).then(resolve);}};return q;}},call:async(name,args)=>{operations.push(args.p_op);if(args.p_op==='rate')return {allowed:true};if(args.p_op==='claim')return cached?{state:'complete'}:{state:'claimed',attempt:id,nextChunk:0};return {};}};
   const result=await service.indexItem(id,{identity:c.ACTIVE_EMBEDDING,embedDocument:()=>{throw new Error('Unexpected provider call');}},store);
   assert.equal(result.state,'complete');assert.equal(patch.processing_status,'completed');

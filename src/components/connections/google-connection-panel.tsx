@@ -6,46 +6,25 @@ import Link from "next/link";
 import { Mail, Folder, CalendarDays, RefreshCw } from "lucide-react";
 import { formatTimestamp, formatRelativeTime } from "@/lib/items/presentation";
 import { runBoundedAnalysis } from "@/lib/items/browser-analysis";
+import { collectionOutcome, latestSyncTimestamp, type CollectionService } from "@/lib/google/sync-outcome";
 import type { GoogleConnectionSummary, GoogleConnectionDetailSummary, GoogleServiceSyncStatus } from "@/lib/google/connections";
 
 type ServiceUIState = {
-  status: GoogleServiceSyncStatus;
+  status: GoogleServiceSyncStatus | "partial";
   lastSyncedAt: string | null;
   resultText: string | null;
 };
 
-function parseInitialResultText(service: "gmail" | "drive" | "calendar", result: Record<string, unknown> | null | undefined): string | null {
-  if (!result) return null;
-  if (service === "gmail") {
-    const created = typeof result.created_count === "number" ? result.created_count : 0;
-    const updated = typeof result.updated_count === "number" ? result.updated_count : 0;
-    const skipped = typeof result.skipped_count === "number" ? result.skipped_count : 0;
-    const collected = typeof result.collected_count === "number" ? result.collected_count : 0;
-    if (created > 0) return `새 항목 ${created}건`;
-    if (updated > 0) return `항목 ${updated}건 갱신`;
-    if (skipped > 0 || collected > 0) return "변경 없음";
-    return "동기화 완료";
-  }
-  if (service === "drive") {
-    const created = typeof result.created === "number" ? result.created : 0;
-    const updated = typeof result.updated === "number" ? result.updated : 0;
-    const reused = typeof result.reused === "number" ? result.reused : 0;
-    if (created > 0) return `새 항목 ${created}건`;
-    if (updated > 0) return `문서 ${updated}건 갱신`;
-    if (reused > 0) return "변경 없음";
-    return "동기화 완료";
-  }
-  if (service === "calendar") {
-    const created = typeof result.created === "number" ? result.created : 0;
-    const updated = typeof result.updated === "number" ? result.updated : 0;
-    const reused = typeof result.reused === "number" ? result.reused : 0;
-    const skipped = typeof result.skipped === "number" ? result.skipped : 0;
-    if (created > 0) return `새 항목 ${created}건`;
-    if (updated > 0) return `일정 ${updated}건 갱신`;
-    if (reused > 0 || skipped > 0) return "변경 없음";
-    return "동기화 완료";
-  }
-  return null;
+type ServiceRunResult = { success: boolean; analysisItemIds: string[]; analysisDiscoveryFailed: boolean; text: string };
+
+function parseInitialResultText(service: CollectionService, result: Record<string, unknown> | null | undefined): string | null {
+  return result ? collectionOutcome(service, result).text : null;
+}
+
+function initialStatus(service: CollectionService, status: GoogleServiceSyncStatus, result: Record<string, unknown> | null | undefined): ServiceUIState["status"] {
+  if (status !== "connected" || !result) return status;
+  const outcome = collectionOutcome(service, result);
+  return outcome.kind === "failed" ? "error" : outcome.kind === "partial" ? "partial" : status;
 }
 
 export function GoogleConnectionPanel({
@@ -61,6 +40,9 @@ export function GoogleConnectionPanel({
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(notice);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [syncIssue, setSyncIssue] = useState(false);
+  const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
+  const [analysisFailed, setAnalysisFailed] = useState(false);
   const [driveTarget, setDriveTarget] = useState("");
   const [driveMode, setDriveMode] = useState("folder");
 
@@ -68,23 +50,53 @@ export function GoogleConnectionPanel({
 
   const [serviceStates, setServiceStates] = useState<Record<"gmail" | "drive" | "calendar", ServiceUIState>>({
     gmail: {
-      status: syncSummary?.services.gmail.status ?? (connected && connection?.capabilities.gmail ? "connected" : connected ? "reconnect_required" : "disconnected"),
-      lastSyncedAt: syncSummary?.services.gmail.lastSyncedAt ?? connection?.lastSyncedAt ?? null,
+      status: initialStatus("gmail", syncSummary?.services.gmail.status ?? (connected && connection?.capabilities.gmail ? "connected" : connected ? "reconnect_required" : "disconnected"), syncSummary?.services.gmail.lastResult),
+      lastSyncedAt: syncSummary?.services.gmail.lastSyncedAt ?? null,
       resultText: parseInitialResultText("gmail", syncSummary?.services.gmail.lastResult),
     },
     drive: {
-      status: syncSummary?.services.drive.status ?? (connected && connection?.capabilities.drive ? "connected" : connected ? "reconnect_required" : "disconnected"),
+      status: initialStatus("drive", syncSummary?.services.drive.status ?? (connected && connection?.capabilities.drive ? "connected" : connected ? "reconnect_required" : "disconnected"), syncSummary?.services.drive.lastResult),
       lastSyncedAt: syncSummary?.services.drive.lastSyncedAt ?? null,
       resultText: parseInitialResultText("drive", syncSummary?.services.drive.lastResult),
     },
     calendar: {
-      status: syncSummary?.services.calendar.status ?? (connected && connection?.capabilities.calendar ? "connected" : connected ? "reconnect_required" : "disconnected"),
+      status: initialStatus("calendar", syncSummary?.services.calendar.status ?? (connected && connection?.capabilities.calendar ? "connected" : connected ? "reconnect_required" : "disconnected"), syncSummary?.services.calendar.lastResult),
       lastSyncedAt: syncSummary?.services.calendar.lastSyncedAt ?? null,
       resultText: parseInitialResultText("calendar", syncSummary?.services.calendar.lastResult),
     },
   });
 
-  async function executeGmailSync(): Promise<{ success: boolean; analysisItemIds: string[]; text: string }> {
+  function finishCollection(service: CollectionService, payload: unknown): ServiceRunResult {
+    const outcome = collectionOutcome(service, payload);
+    setServiceStates(prev => ({
+      ...prev, [service]: {
+        status: outcome.kind === "complete" ? "connected" : outcome.kind === "partial" ? "partial" : "error",
+        lastSyncedAt: latestSyncTimestamp(prev[service].lastSyncedAt, outcome.lastSyncedAt),
+        resultText: outcome.text,
+      },
+    }));
+    return { success: outcome.kind === "complete", analysisItemIds: outcome.analysisItemIds,
+      analysisDiscoveryFailed: outcome.analysisDiscoveryFailed, text: outcome.text };
+  }
+
+  async function analyzeCollected(ids: string[], discoveryFailed: boolean) {
+    if (!ids.length && !discoveryFailed) return;
+    if (!ids.length) {
+      setAnalysisFailed(true);
+      setAnalysisMessage("AI 분석 대상 확인에 실패했습니다. 수집된 자료는 유지됩니다. 자료 상세에서 분석을 다시 요청해 주세요.");
+      return;
+    }
+    try {
+      const result = await runBoundedAnalysis(ids, setAnalysisMessage);
+      setAnalysisFailed(result.failed > 0 || discoveryFailed);
+      setAnalysisMessage(result.message + (discoveryFailed ? " · 일부 수집 자료의 분석 대상 확인 실패" : ""));
+    } catch {
+      setAnalysisFailed(true);
+      setAnalysisMessage("후속 AI 분석 결과를 확인하지 못했습니다. 수집된 자료는 유지됩니다.");
+    }
+  }
+
+  async function executeGmailSync(): Promise<ServiceRunResult> {
     setServiceStates((prev) => ({
       ...prev,
       gmail: { ...prev.gmail, status: "syncing" },
@@ -113,56 +125,27 @@ export function GoogleConnectionPanel({
           ...prev,
           gmail: { ...prev.gmail, status: nextStatus, resultText: nextStatus === "reconnect_required" ? "재연결 필요" : "동기화 실패" },
         }));
-        return { success: false, analysisItemIds: [], text: `Gmail: ${errMsg}` };
+        return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: `Gmail: ${errMsg}` };
       }
 
-      const p = payload as {
-        collected_count?: number;
-        created_count?: number;
-        updated_count?: number;
-        skipped_count?: number;
-        failed_count?: number;
-        capped?: boolean;
-        analysisItemIds?: string[];
-        analysisDiscoveryFailed?: boolean;
-      };
-
-      const created = p.created_count ?? 0;
-      const updated = p.updated_count ?? 0;
-      const skipped = p.skipped_count ?? 0;
-      const collected = p.collected_count ?? 0;
-
-      let resultText = "동기화 완료";
-      if (created > 0) resultText = `새 항목 ${created}건`;
-      else if (updated > 0) resultText = `항목 ${updated}건 갱신`;
-      else if (skipped > 0 || collected > 0) resultText = "변경 없음";
-
-      const now = new Date().toISOString();
-      setServiceStates((prev) => ({
-        ...prev,
-        gmail: { status: "connected", lastSyncedAt: now, resultText },
-      }));
-
-      const summaryText = `Gmail: 수집 ${collected}건 · 신규 ${created}건 · 갱신 ${updated}건 · 기존 ${skipped}건${p.capped ? " (최대 100건)" : ""}`;
-      const analysisIds = Array.isArray(p.analysisItemIds) ? p.analysisItemIds.filter((id): id is string => typeof id === "string") : [];
-      return { success: true, analysisItemIds: analysisIds, text: summaryText };
+      return finishCollection("gmail", payload);
     } catch {
       setServiceStates((prev) => ({
         ...prev,
         gmail: { ...prev.gmail, status: "error", resultText: "동기화 실패" },
       }));
-      return { success: false, analysisItemIds: [], text: "Gmail: 메일 수집을 완료하지 못했습니다." };
+      return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: "Gmail: 메일 수집을 완료하지 못했습니다." };
     }
   }
 
-  async function executeDriveSync(): Promise<{ success: boolean; analysisItemIds: string[]; text: string }> {
+  async function executeDriveSync(): Promise<ServiceRunResult> {
     const target = driveTarget.trim();
     if (!target) {
       setServiceStates((prev) => ({
         ...prev,
         drive: { ...prev.drive, resultText: "수집 대상(폴더/파일) 설정 필요" },
       }));
-      return { success: false, analysisItemIds: [], text: "Drive: 수집 대상(폴더/파일) 설정 필요" };
+      return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: "Drive: 수집 대상(폴더/파일) 설정 필요" };
     }
 
     setServiceStates((prev) => ({
@@ -206,37 +189,20 @@ export function GoogleConnectionPanel({
           ...prev,
           drive: { ...prev.drive, status: nextStatus, resultText: nextStatus === "reconnect_required" ? "재연결 필요" : "동기화 실패" },
         }));
-        return { success: false, analysisItemIds: [], text: `Drive: ${errMsg}` };
+        return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: `Drive: ${errMsg}` };
       }
 
-      const created = payload.created ?? 0;
-      const updated = payload.updated ?? 0;
-      const reused = payload.reused ?? 0;
-
-      let resultText = "동기화 완료";
-      if (created > 0) resultText = `새 항목 ${created}건`;
-      else if (updated > 0) resultText = `문서 ${updated}건 갱신`;
-      else if (reused > 0) resultText = "변경 없음";
-
-      const now = new Date().toISOString();
-      setServiceStates((prev) => ({
-        ...prev,
-        drive: { status: "connected", lastSyncedAt: now, resultText },
-      }));
-
-      const summaryText = `Drive: 신규 ${created} · 갱신 ${updated} · 기존 ${reused}${!payload.complete || payload.capped ? " (일부 수집)" : " · 완료"}`;
-      const analysisIds = Array.isArray(payload.analysisItemIds) ? payload.analysisItemIds : [];
-      return { success: true, analysisItemIds: analysisIds, text: summaryText };
+      return finishCollection("drive", payload);
     } catch {
       setServiceStates((prev) => ({
         ...prev,
         drive: { ...prev.drive, status: "error", resultText: "동기화 실패" },
       }));
-      return { success: false, analysisItemIds: [], text: "Drive: 수집을 완료하지 못했습니다." };
+      return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: "Drive: 수집을 완료하지 못했습니다." };
     }
   }
 
-  async function executeCalendarSync(): Promise<{ success: boolean; text: string }> {
+  async function executeCalendarSync(): Promise<ServiceRunResult> {
     setServiceStates((prev) => ({
       ...prev,
       calendar: { ...prev.calendar, status: "syncing" },
@@ -272,33 +238,16 @@ export function GoogleConnectionPanel({
           ...prev,
           calendar: { ...prev.calendar, status: nextStatus, resultText: nextStatus === "reconnect_required" ? "재연결 필요" : "동기화 실패" },
         }));
-        return { success: false, text: `Calendar: ${errMsg}` };
+        return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: `Calendar: ${errMsg}` };
       }
 
-      const created = payload.created ?? 0;
-      const updated = payload.updated ?? 0;
-      const reused = payload.reused ?? 0;
-      const skipped = payload.skipped ?? 0;
-
-      let resultText = "동기화 완료";
-      if (created > 0) resultText = `새 항목 ${created}건`;
-      else if (updated > 0) resultText = `일정 ${updated}건 갱신`;
-      else if (reused > 0 || skipped > 0) resultText = "변경 없음";
-
-      const now = new Date().toISOString();
-      setServiceStates((prev) => ({
-        ...prev,
-        calendar: { status: "connected", lastSyncedAt: now, resultText },
-      }));
-
-      const summaryText = `Calendar: 신규 ${created} · 갱신 ${updated} · 기존 ${reused + skipped}${!payload.complete || payload.capped ? " (일부 수집)" : " · 완료"}`;
-      return { success: true, text: summaryText };
+      return finishCollection("calendar", payload);
     } catch {
       setServiceStates((prev) => ({
         ...prev,
         calendar: { ...prev.calendar, status: "error", resultText: "동기화 실패" },
       }));
-      return { success: false, text: "Calendar: 수집을 완료하지 못했습니다." };
+      return { success: false, analysisItemIds: [], analysisDiscoveryFailed: false, text: "Calendar: 수집을 완료하지 못했습니다." };
     }
   }
 
@@ -306,14 +255,16 @@ export function GoogleConnectionPanel({
     setPending(`sync-${service}`);
     setMessage(null);
     setSyncResult(null);
+    setSyncIssue(false);
+    setAnalysisMessage(null);
+    setAnalysisFailed(false);
 
     try {
       if (service === "gmail") {
         const res = await executeGmailSync();
         setSyncResult(res.text);
-        if (res.analysisItemIds.length > 0) {
-          await runBoundedAnalysis(res.analysisItemIds, setMessage);
-        }
+        setSyncIssue(!res.success);
+        await analyzeCollected(res.analysisItemIds, res.analysisDiscoveryFailed);
       } else if (service === "drive") {
         if (!driveTarget.trim()) {
           setMessage("Drive 수집 대상을 먼저 지정해 주세요 (아래 '수집 대상 폴더/파일 및 권한 설정'에서 폴더 ID 또는 파일 ID 입력).");
@@ -322,12 +273,12 @@ export function GoogleConnectionPanel({
         }
         const res = await executeDriveSync();
         setSyncResult(res.text);
-        if (res.analysisItemIds.length > 0) {
-          await runBoundedAnalysis(res.analysisItemIds, setMessage);
-        }
+        setSyncIssue(!res.success);
+        await analyzeCollected(res.analysisItemIds, res.analysisDiscoveryFailed);
       } else if (service === "calendar") {
         const res = await executeCalendarSync();
         setSyncResult(res.text);
+        setSyncIssue(!res.success);
       }
       router.refresh();
     } catch (e) {
@@ -341,30 +292,38 @@ export function GoogleConnectionPanel({
     setPending("sync-all");
     setMessage(null);
     setSyncResult(null);
+    setSyncIssue(false);
+    setAnalysisMessage(null);
+    setAnalysisFailed(false);
 
     const summaries: string[] = [];
     const allAnalysisIds: string[] = [];
+    let collectionIssue = false, discoveryFailed = false;
 
     try {
       // 1. Gmail
       const gmailRes = await executeGmailSync();
       summaries.push(gmailRes.text);
       allAnalysisIds.push(...gmailRes.analysisItemIds);
+      collectionIssue ||= !gmailRes.success;
+      discoveryFailed ||= gmailRes.analysisDiscoveryFailed;
 
       // 2. Drive (continues even if Gmail failed)
       const driveRes = await executeDriveSync();
       summaries.push(driveRes.text);
       allAnalysisIds.push(...driveRes.analysisItemIds);
+      collectionIssue ||= !driveRes.success;
+      discoveryFailed ||= driveRes.analysisDiscoveryFailed;
 
       // 3. Calendar (continues even if previous failed)
       const calRes = await executeCalendarSync();
       summaries.push(calRes.text);
+      collectionIssue ||= !calRes.success;
 
       setSyncResult(summaries.join(" | "));
+      setSyncIssue(collectionIssue);
 
-      if (allAnalysisIds.length > 0) {
-        await runBoundedAnalysis(allAnalysisIds, setMessage);
-      }
+      await analyzeCollected(allAnalysisIds, discoveryFailed);
       router.refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "전체 동기화 중 오류가 발생했습니다.");
@@ -438,7 +397,7 @@ export function GoogleConnectionPanel({
     }
   }
 
-  function renderStatusBadge(state: ServiceUIState) {
+  function renderStatusBadge(state: ServiceUIState, service: CollectionService) {
     let colorClass = "bg-stone-300";
     let text = "연결 안 됨";
 
@@ -447,7 +406,10 @@ export function GoogleConnectionPanel({
       text = "동기화 중…";
     } else if (state.status === "connected") {
       colorClass = "bg-emerald-500";
-      text = "정상";
+      text = "연결됨";
+    } else if (state.status === "partial") {
+      colorClass = "bg-amber-500";
+      text = "일부 수집";
     } else if (state.status === "reconnect_required") {
       colorClass = "bg-amber-500";
       text = "재연결 필요";
@@ -456,13 +418,14 @@ export function GoogleConnectionPanel({
       text = "오류";
     }
 
+    const lastSyncedAt = latestSyncTimestamp(state.lastSyncedAt, syncSummary?.services[service].lastSyncedAt);
     return (
       <div className="flex flex-wrap items-center gap-1.5 text-xs">
         <span className={`inline-block size-2 rounded-full ${colorClass}`} aria-hidden="true" />
         <span className="font-medium text-foreground">{text}</span>
-        {state.lastSyncedAt && (
-          <span className="text-muted-foreground">· {formatRelativeTime(state.lastSyncedAt)}</span>
-        )}
+        {lastSyncedAt ? (
+          <span className="text-muted-foreground">· 마지막 성공 {formatRelativeTime(lastSyncedAt)}</span>
+        ) : <span className="text-muted-foreground">· 최근 성공 기록 없음</span>}
       </div>
     );
   }
@@ -550,7 +513,7 @@ export function GoogleConnectionPanel({
                   <h3 className="text-sm font-semibold">Gmail</h3>
                 </div>
                 <div className="mt-1">
-                  {renderStatusBadge(serviceStates.gmail)}
+                  {renderStatusBadge(serviceStates.gmail, "gmail")}
                 </div>
                 {serviceStates.gmail.resultText && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
@@ -599,7 +562,7 @@ export function GoogleConnectionPanel({
                   <h3 className="text-sm font-semibold">Google Drive</h3>
                 </div>
                 <div className="mt-1">
-                  {renderStatusBadge(serviceStates.drive)}
+                  {renderStatusBadge(serviceStates.drive, "drive")}
                 </div>
                 {serviceStates.drive.resultText && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
@@ -689,7 +652,7 @@ export function GoogleConnectionPanel({
                   <h3 className="text-sm font-semibold">Google Calendar</h3>
                 </div>
                 <div className="mt-1">
-                  {renderStatusBadge(serviceStates.calendar)}
+                  {renderStatusBadge(serviceStates.calendar, "calendar")}
                 </div>
                 {serviceStates.calendar.resultText && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
@@ -738,7 +701,8 @@ export function GoogleConnectionPanel({
       </div>
 
       {message && <p role="alert" className="text-sm text-destructive">{message}</p>}
-      {syncResult && <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">{syncResult}</p>}
+      {syncResult && <p role={syncIssue ? "alert" : "status"} className={`text-sm font-medium ${syncIssue ? "text-amber-700 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`}>{syncResult}</p>}
+      {analysisMessage && <p role={analysisFailed ? "alert" : "status"} className={`text-sm ${analysisFailed ? "text-destructive" : "text-muted-foreground"}`}>{analysisMessage}</p>}
 
       <p className="text-sm leading-6 text-muted-foreground">
         Gmail·Drive 수집 후 미분석·변경 자료의 본문을 Gemini로 보내 최대 3건씩 분석합니다. 민감한 자료는 수집하지 마세요. Calendar는 자동 분석에서 제외합니다.

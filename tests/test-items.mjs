@@ -52,6 +52,7 @@ function queries(responses, authorized = true) {
   const client = createClient("https://db.invalid", "test-publishable-key", {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: async (url) => {
+      if (new URL(url).pathname.endsWith("/rpc/gmail_analysis_job_status")) return Response.json([]);
       calls.push(new URL(url));
       const response = responses.shift();
       assert.ok(response, "Unexpected database request");
@@ -63,7 +64,14 @@ function queries(responses, authorized = true) {
     if (!authorized) throw new Error("Authentication required");
     return { id: "owner-fixture" };
   } };
+  const processingQueries = load("src/lib/items/processing-queries.ts", {
+    "@/lib/supabase/auth": auth, "@/lib/supabase/server": { async createClient() { return client; } },
+    "@/lib/items/filters": filters, "@/lib/items/processing": load("src/lib/items/processing.ts"),
+    "@/lib/items/analysis-policy": loadAnalysisModule("src/lib/items/analysis-policy.ts"),
+    "@/lib/items/free-analysis-scope": { freeAnalysisScope: () => { throw new Error("WORKER_DISABLED"); } },
+  });
   const queryModule = load("src/lib/items/queries.ts", {
+    "@/lib/items/processing-queries": processingQueries,
     "@/lib/supabase/auth": auth, "@/lib/supabase/server": { async createClient() { return client; } },
     "@/lib/items/filters": filters, "@/lib/items/presentation": presentation,
     "@/lib/google/calendar-contract": calendarContract,

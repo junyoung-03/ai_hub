@@ -139,39 +139,17 @@ export async function getGoogleServicesSyncSummary(userId: string): Promise<Goog
     ? (syncState.calendar as Record<string, unknown>)
     : {};
 
-  let driveLastSyncedAt: string | null = typeof driveSync.last_synced_at === "string" ? driveSync.last_synced_at : null;
-  let calendarLastSyncedAt: string | null = typeof calendarSync.last_synced_at === "string" ? calendarSync.last_synced_at : null;
-
-  // Fallback to latest item timestamp if sync_state not yet populated
-  if (!driveLastSyncedAt && hasDriveScope) {
-    const { data: latestDrive } = await supabase
-      .from("items")
-      .select("created_at")
-      .eq("user_id", userId)
-      .eq("source", "drive")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestDrive?.created_at) driveLastSyncedAt = latestDrive.created_at;
-  }
-  if (!calendarLastSyncedAt && hasCalendarScope) {
-    const { data: latestCal } = await supabase
-      .from("items")
-      .select("created_at")
-      .eq("user_id", userId)
-      .eq("source", "calendar")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestCal?.created_at) calendarLastSyncedAt = latestCal.created_at;
-  }
+  // Only persisted success records establish synchronization time. An ITEM's
+  // creation time may be from a partial run and is not a successful checkpoint.
+  const driveLastSyncedAt: string | null = typeof driveSync.last_synced_at === "string" ? driveSync.last_synced_at : null;
+  const calendarLastSyncedAt: string | null = typeof calendarSync.last_synced_at === "string" ? calendarSync.last_synced_at : null;
 
   const initialColl = gmailSync.initial_collection && typeof gmailSync.initial_collection === "object"
     ? (gmailSync.initial_collection as Record<string, unknown>)
     : null;
   const gmailLastSyncedAt: string | null = typeof gmailSync.last_synced_at === "string"
     ? gmailSync.last_synced_at
-    : (typeof initialColl?.completed_at === "string" ? initialColl.completed_at : connection.last_synced_at);
+    : (typeof initialColl?.completed_at === "string" ? initialColl.completed_at : null);
 
   const getStatus = (hasScope: boolean, serviceSync: Record<string, unknown>): GoogleServiceSyncStatus => {
     if (!hasScope) return "reconnect_required";
