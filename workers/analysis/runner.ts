@@ -15,7 +15,7 @@ function job(value: Json | null): Job | null {
 }
 
 /** Bounded invocation; Scheduler calls again to drain remaining/delayed jobs. */
-export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedUsers: string[], maxJobs = 3, demoItemIds?: string[]) {
+export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedUsers: string[], maxJobs = 3, demoItemIds?: string[], automatic = false) {
   if (!allowedUsers.length || allowedUsers.length > 100 || allowedUsers.some(id => !uuid(id))) throw new Error("EXPLICIT_OWNER_SCOPE_REQUIRED");
   let noiseEnabled = false;
   if (process.env.PROMOTIONAL_NOISE_ENABLED === "true") {
@@ -29,7 +29,7 @@ export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedU
   const counts = { complete:0, retry:0, failed:0, stale:0 };
   const end = Date.now() + 240_000;
   for (let n=0; n<Math.min(3,Math.max(0,maxJobs)) && Date.now()<end-85_000; n++) {
-    const claim = await analysisJobRpc(admin,demoItemIds ? "claim_free_gmail_analysis_job" : "claim_gmail_analysis_job",
+    const claim = await analysisJobRpc(admin,automatic ? "claim_gmail_automatic_job" : demoItemIds ? "claim_free_gmail_analysis_job" : "claim_gmail_analysis_job",
       {p_allowed_users:allowedUsers,...(demoItemIds ? {p_item_ids:demoItemIds} : {})});
     if (claim.error) throw new Error("JOB_STORAGE_UNAVAILABLE");
     const current = job(claim.data); if (!current) break;
@@ -51,7 +51,7 @@ export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedU
       const topics = await admin.from("classifications").select("ai_primary_topic,user_primary_topic").eq("user_id",current.userId).limit(200);
       if (topics.error) throw new Error("ANALYSIS_STORAGE_UNAVAILABLE");
       const names = [...new Set((topics.data ?? []).map(r=>r.user_primary_topic ?? r.ai_primary_topic).filter((v):v is string=>!!v?.trim()))];
-      const result = cache ? validateAnalysis(cache,item.content_text) : await analyzeGmailText(item.content_text,names,undefined,noiseEnabled ? "0.3" : "0.2",demoItemIds ? {maxAttempts:1} : undefined);
+      const result = cache ? validateAnalysis(cache,item.content_text) : await analyzeGmailText(item.content_text,names,undefined,noiseEnabled ? "0.3" : "0.2",demoItemIds || automatic ? {maxAttempts:1} : undefined);
       const saved = await analysisJobRpc(admin,"finish_gmail_analysis_job",{...base,p_analysis:result as Json,p_model:resultModel,
         p_fingerprint:analysisFingerprint(item.content_text,resultModel,result.schemaVersion),p_error_code:null});
       if (saved.error) {
@@ -61,7 +61,7 @@ export async function runAnalysisBatch(admin: SupabaseClient<Database>, allowedU
       if (saved.data && typeof saved.data === "object" && !Array.isArray(saved.data) && saved.data.stale) counts.stale++; else counts.complete++;
     } catch (error) {
       const failure = analysisFailure(error,current.attempt);
-      if (demoItemIds && failure.code === "GEMINI_HTTP_429") failure.retrySeconds = Math.max(3600,failure.retrySeconds ?? 3600);
+      if ((demoItemIds || automatic) && failure.code === "GEMINI_HTTP_429") failure.retrySeconds = Math.max(3600,failure.retrySeconds ?? 3600);
       const saved = await analysisJobRpc(admin,"finish_gmail_analysis_job",{...base,p_analysis:null,p_model:model,p_fingerprint:null,
         p_error_code:failure.code,p_retry_seconds:failure.retrySeconds});
       if (saved.error) { if (saved.error.code === "PT409") { counts.stale++; continue; } throw new Error("JOB_STORAGE_UNAVAILABLE"); }

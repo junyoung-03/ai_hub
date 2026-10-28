@@ -10,7 +10,79 @@ const id=n=>`40000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const migration='supabase/migrations/20261027090000_gmail_analysis_admission_and_lease_cleanup.sql';
 const env={GMAIL_ANALYSIS_WORKER_ENABLED:'true',GEMINI_FREE_TIER_CONFIRMED:'true',GMAIL_ANALYSIS_CRON_SECRET:'s'.repeat(40),GMAIL_ANALYSIS_ALLOWED_USERS:owner,GMAIL_ANALYSIS_DEMO_ITEM_IDS:id(1)};
 
-function apiHarness({environment=env,itemId=id(1),userId=owner,admission={state:'pending',processingStatus:'queued'},rpcError=null}={}) {
+test('diagnostic history retains safe rule and attempt, and only the owner can read it',async()=>{
+ const h=await database(); const {db,scalar}=h;
+ try {
+  await db.exec(readFileSync('supabase/migrations/20261028090000_analysis_diagnostic_history.sql','utf8'));
+  await h.seed(1); await h.schedule(); const j=await h.claim();
+  await h.finish(j,null,'ANALYSIS_VALIDATION_REQUIREMENTS');
+  const history=await scalar('select public.analysis_diagnostics($1)',[id(1)]);
+  assert.ok(history.some(x=>x.error_code==='ANALYSIS_VALIDATION_REQUIREMENTS' && x.source==='gmail_worker' && x.attempt===1));
+  assert.ok(!JSON.stringify(history).includes(content));
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[other]);
+  assert.equal((await scalar('select public.analysis_diagnostics($1)',[id(1)])).length,0);
+  assert.equal(await scalar("select has_table_privilege('authenticated','private.analysis_diagnostic_history','SELECT')"),false);
+ } finally { await db.close(); }
+});
+
+test('automatic collection lease and analysis queue preserve owner and free budget boundaries',async()=>{
+ const h=await database(); const {db,scalar}=h;
+ try {
+  await db.exec(readFileSync('supabase/migrations/20261028090100_gmail_automatic_processing.sql','utf8'));
+  assert.equal((await scalar('select public.gmail_automation_state()')).enabled,false);
+  assert.equal(await scalar('select public.claim_gmail_sync($1)',[owner]),null);
+  await db.query('update private.gmail_automation_config set enabled=true,owner_id=$1',[owner]);
+  assert.equal(await scalar('select public.gmail_automatic_available()'),true);
+  assert.equal(await scalar('select public.claim_gmail_sync($1)',[other]),null);
+  const first=await scalar('select public.claim_gmail_sync($1)',[owner]);
+  assert.ok(first.token); assert.equal(await scalar('select public.claim_gmail_sync($1)',[owner]),null);
+  assert.equal(await scalar("select public.finish_gmail_sync($1,$2,'complete',null,'{}'::jsonb)",[owner,id(9)]),false);
+  assert.equal(await scalar("select public.finish_gmail_sync($1,$2,'partial',null,$3::jsonb)",[owner,first.token,JSON.stringify({collected_count:2,created_count:1,failed_count:1})]),true);
+  assert.equal(await scalar("select count(*)::int from private.gmail_sync_history where state='partial' and failed_count=1"),1);
+  const old=await scalar('select public.claim_gmail_sync($1)',[owner]);
+  await db.exec("update private.gmail_automation_config set sync_lease_until=clock_timestamp()-interval '1 second'");
+  const next=await scalar('select public.claim_gmail_sync($1)',[owner]);
+  assert.notEqual(old.token,next.token);
+  assert.equal(await scalar("select public.finish_gmail_sync($1,$2,'complete',null,'{}'::jsonb)",[owner,old.token]),false);
+  assert.equal(await scalar("select count(*)::int from private.gmail_sync_history where state='interrupted'"),1);
+  await h.seed(4); await db.exec("select cron.schedule('etc-gmail-auto-analysis','* * * * *','select 1')");
+  assert.equal((await scalar('select public.request_automatic_gmail_analysis($1)',[id(4)])).state,'pending');
+  assert.equal(await scalar('select public.claim_gmail_automatic_job($1::uuid[])',[[other]]),null);
+  const job=await scalar('select public.claim_gmail_automatic_job($1::uuid[])',[[owner]]);
+  assert.equal(job.itemId,id(4)); assert.equal(await scalar('select reserved from private.gmail_free_budget'),1);
+  assert.equal(await scalar('select public.claim_gmail_automatic_job($1::uuid[])',[[owner]]),null);
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[other]);
+  assert.equal(await scalar('select public.gmail_automatic_available()'),false);
+  await assert.rejects(()=>scalar('select public.request_automatic_gmail_analysis($1)',[id(4)]),e=>e.code==='42501');
+ } finally { await db.close(); }
+});
+
+test('automatic scheduler is opt-in, owner scoped and does not put its secret in HTTP headers',async()=>{
+ const h=await database();const {db,scalar}=h;
+ try {
+  await db.exec(`create schema net; create table net.test_calls(id bigint generated always as identity,url text,headers jsonb,timeout_ms int);
+   create table net._http_response(id bigint,status_code integer,timed_out boolean);
+   create function extensions.hmac(text,text,text) returns bytea language sql as $$select decode(repeat('ab',32),'hex')$$;
+   create function net.http_post(url text,body jsonb,headers jsonb,timeout_milliseconds int) returns bigint language plpgsql as $$
+   declare n bigint;begin insert into net.test_calls(url,headers,timeout_ms) values(url,headers,timeout_milliseconds) returning id into n;return n;end$$;`);
+  await db.exec(readFileSync('supabase/migrations/20261028090100_gmail_automatic_processing.sql','utf8'));
+  assert.equal(await scalar("select private.dispatch_gmail_automatic('sync')"),null);
+  await db.query('update private.gmail_automation_config set enabled=true,owner_id=$1',[owner]);
+  await db.query("insert into vault.decrypted_secrets values('etc_gmail_analysis_url',$1),('etc_gmail_analysis_secret',$2)",['https://ai-hub-one-ebon.vercel.app/api/internal/gmail-analysis','synthetic-secret-which-must-not-be-exposed']);
+  assert.equal(await scalar("select private.dispatch_gmail_automatic('analysis')"),null);
+  assert.equal(await scalar("select private.dispatch_gmail_automatic('sync')"),1);
+  const row=(await db.query('select * from net.test_calls')).rows[0];
+  assert.match(row.url,/\/api\/internal\/gmail-sync$/);assert.equal(row.timeout_ms,300000);
+  assert.ok(row.headers['x-etc-signature']);assert.ok(!JSON.stringify(row).includes('synthetic-secret'));
+  await db.exec('insert into net._http_response values(1,503,false)');
+  await h.seed(4);assert.equal(await scalar("select private.dispatch_gmail_automatic('analysis')"),2);
+  assert.equal(await scalar('select http_status from private.gmail_dispatch_history where request_id=1'),503);
+  await db.exec("update private.gmail_free_budget set budget_day=(clock_timestamp() at time zone 'UTC')::date,reserved=5");
+  assert.equal(await scalar("select private.dispatch_gmail_automatic('analysis')"),null);
+ } finally { await db.close(); }
+});
+
+function apiHarness({environment=env,itemId=id(1),userId=owner,admission={state:'pending',processingStatus:'queued'},rpcError=null,auto=false}={}) {
  let rpcCalls=0,providerCalls=0;
  const q={select(){return q;},eq(){return q;},maybeSingle:async()=>({data:{id:itemId,source:'gmail',format:'email',content_text:content,metadata:{},processing_status:'queued'}})};
  const api=load('src/lib/items/analysis.ts',{
@@ -18,7 +90,7 @@ function apiHarness({environment=env,itemId=id(1),userId=owner,admission={state:
   '@/lib/gemini/validation':{},'@/lib/items/analysis-failure':{},'@/lib/items/filters':{isItemId:()=>true},
   '@/lib/supabase/auth':{requireUser:async()=>({id:userId})},
   '@/lib/supabase/admin':{createAdminClient(){throw new Error('unexpected admin');}},
-  '@/lib/supabase/server':{createClient:async()=>({from:()=>q,rpc:async(name,args)=>{rpcCalls++;assert.equal(name,'request_gmail_analysis');assert.equal(args.p_item_id,itemId);return {data:admission,error:rpcError};}})},
+  '@/lib/supabase/server':{createClient:async()=>({from:()=>q,rpc:async(name,args)=>{if(name==='gmail_automatic_available')return {data:auto,error:null};rpcCalls++;assert.equal(name,auto?'request_automatic_gmail_analysis':'request_gmail_analysis');assert.equal(args.p_item_id,itemId);return {data:admission,error:rpcError};}})},
  },{process:{env:environment}});
  return {api,run:()=>api.analyzeOwnedItem(itemId),counts:()=>({rpcCalls,providerCalls})};
 }
@@ -30,6 +102,11 @@ test('admission shares exact free-worker owner/item/config scope and never falls
   assert.deepEqual(h.counts(),{rpcCalls:0,providerCalls:0});
  }
  const h=apiHarness();assert.equal((await h.run()).queued,true);assert.deepEqual(h.counts(),{rpcCalls:1,providerCalls:0});
+});
+
+test('automatic mode admits an owner item beyond demo IDs without calling the provider',async()=>{
+ const h=apiHarness({itemId:id(4),auto:true});assert.equal((await h.run()).queued,true);
+ assert.deepEqual(h.counts(),{rpcCalls:1,providerCalls:0});
 });
 
 test('admission distinguishes pending, running, complete, paused and rejected state without fake queued success',async()=>{

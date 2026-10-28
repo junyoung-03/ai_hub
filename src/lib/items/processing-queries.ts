@@ -7,7 +7,7 @@ import { summarizeProcessing, type AnalysisJobStatus, type ProcessingSnapshot } 
 import type { Json } from "@/types/database";
 import { freeAnalysisScope } from "@/lib/items/free-analysis-scope";
 
-type StatusClient = { rpc: (name: string, args: { p_item_ids: string[] }) => PromiseLike<{ data: unknown; error: unknown }> };
+type StatusClient = { rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> };
 /** Optional migration: unavailable job state must never invent active work. */
 export async function readAnalysisJobs(client: object, itemIds: string[], userId?: string): Promise<Map<string, AnalysisJobStatus>> {
   const jobs = new Map<string, AnalysisJobStatus>();
@@ -15,12 +15,16 @@ export async function readAnalysisJobs(client: object, itemIds: string[], userId
   let runnableIds: string[] = [];
   try { const scope = freeAnalysisScope(); if (userId && scope.users.includes(userId)) runnableIds = scope.items; } catch { /* Misconfigured or disabled workers cannot progress queued work. */ }
   try {
+    if (runnableIds.length) try {
+      const automatic = await (client as StatusClient).rpc("gmail_automatic_available", {});
+      if (!automatic.error && automatic.data === true) runnableIds = itemIds;
+    } catch { /* Older deployment keeps its original demo scope. */ }
     const { data, error } = await (client as StatusClient).rpc("gmail_analysis_job_status", { p_item_ids: itemIds });
     if (error || !Array.isArray(data)) return jobs;
     for (const row of data) {
       if (!row || typeof row !== "object" || !itemIds.includes(row.itemId) || !["pending", "running", "retry", "complete", "failed"].includes(row.state)) continue;
       const timestamp = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
-      jobs.set(row.itemId, { itemId: row.itemId, state: row.state, leaseUntil: timestamp(row.leaseUntil), availableAt: timestamp(row.availableAt), schedulerAvailable: row.schedulerAvailable === true && runnableIds.includes(row.itemId) });
+      jobs.set(row.itemId, { itemId: row.itemId, state: row.state, leaseUntil: timestamp(row.leaseUntil), availableAt: timestamp(row.availableAt), schedulerAvailable: row.schedulerAvailable === true && runnableIds.includes(row.itemId), waitingForBudget: row.waitingForBudget === true && runnableIds.includes(row.itemId) });
     }
   } catch { /* A deployment without the read RPC keeps manual refresh available. */ }
   return jobs;

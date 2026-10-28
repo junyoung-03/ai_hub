@@ -13,6 +13,9 @@ import { formatTimestamp, locatorLabels } from "@/lib/items/presentation";
 import { NoiseControls } from "@/components/items/noise-controls";
 import { SearchIndexControl } from "@/components/items/search-index-control";
 import { ProcessingRefresh } from "@/components/items/processing-refresh";
+import { createClient } from "@/lib/supabase/server";
+import { analysisJobRpc } from "@/lib/items/analysis-job-rpc";
+import { processingErrorMessage } from "@/lib/items/processing";
 
 export default async function ItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   await requirePageUser();
@@ -23,6 +26,10 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
   if (!data) notFound();
   const { item, classification, actions, evidence, original } = data;
   const eligible = data.processing.canAnalyze;
+  let diagnosticResult: Awaited<ReturnType<typeof analysisJobRpc>> | null = null;
+  if (item.processingStatus === "failed") try { diagnosticResult = await analysisJobRpc(await createClient(), "analysis_diagnostics", {p_item_id:item.id}); }
+  catch { /* Diagnostics cannot prevent viewing the original item. */ }
+  const diagnosticRows = Array.isArray(diagnosticResult?.data) ? diagnosticResult.data.filter(row => row && typeof row === "object" && !Array.isArray(row)).slice(0,10) : [];
 
   const originalPane = <section className="min-w-0 rounded-xl border border-line bg-surface px-5 py-6 sm:px-8 sm:py-8" aria-labelledby="original-title">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="original-title">원문</h2>{original.previewType === "google" && original.url && <a className="btn-secondary" href={original.url} target="_blank" rel="noopener noreferrer">Google 원본 ↗</a>}</div>
@@ -38,6 +45,14 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
     {item.source === "gmail" && await promotionalReady() && <NoiseControls itemId={item.id}/>}
     <div><p className="mb-1 text-xs font-medium tracking-[0.08em] text-faint">AI INSIGHT</p><h2 id="analysis-title">분석과 할 일</h2>{data.aiAnalysis ? <p className="meta mt-2">분석 완료 · {formatTimestamp(data.aiAnalysis.analyzedAt)}</p> : item.processingStatus === "analyzing" ? <p role="status" className="mt-2 text-sm text-primary">AI 분석 중…</p> : item.processingStatus === "failed" && !data.processing.canPoll ? <p role="alert" className="mt-2 text-sm text-destructive">AI 분석에 실패했습니다.</p> : <p role="status" className="mt-2 text-sm text-muted-foreground">검증된 AI 분석 결과가 아직 없습니다.</p>}</div>
     <div role={item.processingStatus === "failed" && !data.processing.canPoll ? "alert" : "status"} className="space-y-2 text-sm text-muted-foreground"><p>{data.processing.message}</p>{data.processing.updatedAt && <p className="meta">최근 변경: <time dateTime={data.processing.updatedAt}>{formatTimestamp(data.processing.updatedAt)}</time></p>}</div>
+    {item.processingStatus === "failed" && <details className="text-sm"><summary className="cursor-pointer">분석 진단 기록</summary>
+      {!diagnosticRows.length ? <p className="meta mt-2">이전 실패의 상세 기록이 없거나 진단 기록을 불러오지 못했습니다.</p> : <ul className="mt-2 space-y-2">{diagnosticRows.map((row,index) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+        const code = typeof row.error_code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(row.error_code) ? row.error_code : null;
+        const time = typeof row.occurred_at === "string" && Number.isFinite(Date.parse(row.occurred_at)) ? row.occurred_at : null;
+        return <li key={index}>{time && <time dateTime={time}>{formatTimestamp(time)}</time>}{" · "}{typeof row.state === "string" ? row.state : "unknown"}{typeof row.attempt === "number" ? ` · ${row.attempt}회차` : ""}{code && <><br/><code>{code}</code><p>{processingErrorMessage(code) ?? "작업 상태를 확인해 주세요."}</p></>}</li>;
+      })}</ul>}
+    </details>}
     <section className="insight-section" aria-labelledby="actions-title"><h3 id="actions-title">해야 할 일 <span className="text-sm font-normal text-muted-foreground">{actions.length}개</span></h3>
       {!actions.length && <p className="text-muted-foreground">원문에서 확인된 할 일이 없습니다.</p>}
       {actions.map(action => <article key={action.id} className="space-y-3 border-t pt-5 first-of-type:border-0 first-of-type:pt-0">

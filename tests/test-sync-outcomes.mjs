@@ -124,11 +124,11 @@ test('a successful collection without returned server time never invents a curre
   assert.match(harness.current().gmail.resultText, /이번 수집 완료/);
 });
 
-test('bounded Gmail completion remains successful when more mailbox pages exist', async () => {
+test('bounded Gmail collection reports partial when more mailbox pages exist', async () => {
   const harness = panelHarness(async () => Response.json(gmail({ collected_count: 100, skipped_count: 100, capped: true })));
   await harness.sync('gmail');
-  assert.equal(harness.current().gmail.status, 'connected');
-  assert.match(harness.current().gmail.resultText, /이번 수집 완료.*최대 100건 범위.*추가 메일 있음/);
+  assert.equal(harness.current().gmail.status, 'partial');
+  assert.match(harness.current().gmail.resultText, /일부 수집.*최대 100건 범위.*추가 메일 있음/);
   assert.equal(harness.current().gmail.lastSyncedAt, oldTime);
 });
 

@@ -90,22 +90,36 @@ export async function collectInitialGmail() {
     .eq("user_id", user.id).eq("provider", "google").eq("status", "connected").maybeSingle();
   if (error) throw new GmailCollectionError("STORAGE_FAILED");
   if (!owned) throw new GmailCollectionError("CONNECTION_REQUIRED");
-  const key = `${user.id}:${connection.id}`;
+  return collectGmailForOwner(user.id, connection.id);
+}
+
+/** Server-controlled owner only. The caller must hold the distributed automation lease. */
+export async function collectScheduledGmail(userId: string) {
+  const admin = createAdminClient();
+  const { data: connections, error } = await admin.from("connections").select("id,scopes")
+    .eq("user_id", userId).eq("provider", "google").eq("status", "connected").limit(2);
+  if (error) throw new GmailCollectionError("STORAGE_FAILED");
+  if (!connections || connections.length !== 1 || !connections[0].scopes.includes("https://www.googleapis.com/auth/gmail.readonly")) throw new GmailCollectionError("CONNECTION_REQUIRED");
+  return collectGmailForOwner(userId, connections[0].id);
+}
+
+async function collectGmailForOwner(userId: string, connectionId: string) {
+  const key = `${userId}:${connectionId}`;
   if (active.has(key)) throw new GmailCollectionError("SYNC_IN_PROGRESS");
   active.add(key);
   try {
-    const gmail = await createGmailClient(user.id, connection.id), admin = createAdminClient();
+    const gmail = await createGmailClient(userId, connectionId), admin = createAdminClient();
     const historyId = await gmail.profile(); // Capture BEFORE enumeration, not after it.
     const { ids, capped } = await gmail.list();
     const counts = { collected_count: 0, created_count: 0, updated_count: 0, skipped_count: 0, failed_count: 0 };
     const collectedIds: string[] = [];
     // Bound parallel Google requests and DB work; individual failures do not discard successes.
     for (let offset = 0; offset < ids.length; offset += 4) {
-      await ensureConnected(admin, user.id, connection.id);
+      await ensureConnected(admin, userId, connectionId);
       const results = await Promise.allSettled(ids.slice(offset, offset + 4).map(async (id) => {
         const raw = await gmail.message(id);
         const mapped = mapGmailMessage(raw, id);
-        const outcome = await saveGmailItem(admin, user.id, connection.id, mapped);
+        const outcome = await saveGmailItem(admin, userId, connectionId, mapped);
         collectedIds.push(id); return outcome;
       }));
       for (const result of results) {
@@ -118,14 +132,15 @@ export async function collectInitialGmail() {
         }
       }
     }
-    const complete = counts.failed_count === 0;
-    if (complete) await storeBaseline(admin, user.id, connection.id, historyId, capped, counts);
+    // A capped scan cannot prove the complete inbox window was processed.
+    const complete = counts.failed_count === 0 && !capped;
+    if (complete) await storeBaseline(admin, userId, connectionId, historyId, capped, counts);
     // Candidate discovery is after collection commit and cannot turn collection success into failure.
     let analysisItemIds: string[] = [], analysisDiscoveryFailed = false;
     try {
       if (collectedIds.length) {
-        const { data: rows, error: candidateError } = await cookieClient.from("items").select("id,source,format,content_text,metadata")
-          .eq("user_id", user.id).eq("connection_id", connection.id).eq("source", "gmail").in("external_id", collectedIds).limit(INITIAL_GMAIL_LIMIT);
+        const { data: rows, error: candidateError } = await admin.from("items").select("id,source,format,content_text,metadata")
+          .eq("user_id", userId).eq("connection_id", connectionId).eq("source", "gmail").in("external_id", collectedIds).limit(INITIAL_GMAIL_LIMIT);
         if (candidateError || !rows) throw new Error();
         analysisItemIds = rows.filter(row => {
           const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata : {};
