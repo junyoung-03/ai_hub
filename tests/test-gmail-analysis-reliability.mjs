@@ -29,6 +29,7 @@ test('automatic collection lease and analysis queue preserve owner and free budg
  const h=await database(); const {db,scalar}=h;
  try {
   await db.exec(readFileSync('supabase/migrations/20261028090100_gmail_automatic_processing.sql','utf8'));
+  await db.exec(readFileSync('supabase/migrations/20261028090200_gmail_sync_lease_token_access.sql','utf8'));
   assert.equal((await scalar('select public.gmail_automation_state()')).enabled,false);
   assert.equal(await scalar('select public.claim_gmail_sync($1)',[owner]),null);
   await db.query('update private.gmail_automation_config set enabled=true,owner_id=$1',[owner]);
@@ -36,8 +37,12 @@ test('automatic collection lease and analysis queue preserve owner and free budg
   assert.equal(await scalar('select public.claim_gmail_sync($1)',[other]),null);
   const first=await scalar('select public.claim_gmail_sync($1)',[owner]);
   assert.ok(first.token); assert.equal(await scalar('select public.claim_gmail_sync($1)',[owner]),null);
+  assert.equal(await scalar('select public.gmail_sync_lease_valid($1,$2)',[owner,first.token]),true);
+  assert.equal(await scalar('select public.gmail_sync_lease_valid($1,$2)',[other,first.token]),false);
+  assert.equal(await scalar("select has_function_privilege('authenticated','public.gmail_sync_lease_valid(uuid,uuid)','EXECUTE')"),false);
   assert.equal(await scalar("select public.finish_gmail_sync($1,$2,'complete',null,'{}'::jsonb)",[owner,id(9)]),false);
   assert.equal(await scalar("select public.finish_gmail_sync($1,$2,'partial',null,$3::jsonb)",[owner,first.token,JSON.stringify({collected_count:2,created_count:1,failed_count:1})]),true);
+  assert.equal(await scalar('select public.gmail_sync_lease_valid($1,$2)',[owner,first.token]),false);
   assert.equal(await scalar("select count(*)::int from private.gmail_sync_history where state='partial' and failed_count=1"),1);
   const old=await scalar('select public.claim_gmail_sync($1)',[owner]);
   await db.exec("update private.gmail_automation_config set sync_lease_until=clock_timestamp()-interval '1 second'");

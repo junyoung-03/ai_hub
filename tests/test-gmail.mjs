@@ -94,15 +94,15 @@ test("missing headers work; encoded Subject and case-insensitive headers decode;
 });
 
 function gmailHarness({ expired = false, missing = false, refreshFails = false, unauthorized = false, response } = {}) {
-  const requests = [], saved = [];
+  const requests = [], saved = [], credentialAccess = [];
   let refreshCount = 0;
   const connections = {
-    async getGoogleConnectionTokens(user, connection) { assert.equal(user, "owner"); assert.equal(connection, "connection"); return missing ? null : {
+    async getGoogleConnectionTokens(user, connection, access) { credentialAccess.push(access); assert.equal(user, "owner"); assert.equal(connection, "connection"); return missing ? null : {
       accessToken: saved.at(-1)?.accessToken ?? "synthetic-old", refreshToken: "synthetic-refresh",
       accessTokenCiphertext: saved.length ? "synthetic-new-cipher" : "synthetic-old-cipher",
       scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
       expiresAt: new Date(Date.now() + (expired && !saved.length ? -1 : 3600000)).toISOString() }; },
-    async refreshGoogleConnectionTokens(user, connection, values) { assert.equal(user, "owner"); assert.equal(connection, "connection"); saved.push(values); return true; },
+    async refreshGoogleConnectionTokens(user, connection, values, access) { credentialAccess.push(access); assert.equal(user, "owner"); assert.equal(connection, "connection"); saved.push(values); return true; },
   };
   const api = load("src/lib/google/gmail-client.ts", {
     "@/lib/google/connections": connections, "@/lib/google/gmail-message": parser,
@@ -115,8 +115,14 @@ function gmailHarness({ expired = false, missing = false, refreshFails = false, 
     if (unauthorized && init.headers.Authorization === "Bearer synthetic-old") return new Response("{}", { status: 401 });
     return response ? response(parsed, requests.length) : Response.json({ historyId: "100" });
   } });
-  return { api, requests, saved, refreshCount: () => refreshCount };
+  return { api, requests, saved, credentialAccess, refreshCount: () => refreshCount };
 }
+
+test("scheduled Gmail credential reads and refresh retain the same owner-bound lease", async () => {
+  const h=gmailHarness({expired:true}); const client=await h.api.createGmailClient("owner","connection",{syncLeaseToken:"synthetic-lease"});
+  await client.profile(); assert.equal(h.refreshCount(),1);
+  assert.ok(h.credentialAccess.length>=3);assert.ok(h.credentialAccess.every(value=>value?.syncLeaseToken==="synthetic-lease"));
+});
 
 test("expired access refreshes once, stores via RPC boundary, concurrent callers share refreshed token", async () => {
   const h = gmailHarness({ expired: true });
@@ -213,16 +219,16 @@ function collectionHarness({ status = "connected", foreign = false, failMessage 
 
 test("scheduled collector uses only its explicit owner and preserves normal collection semantics", async () => {
   const h = collectionHarness();
-  const result = await h.collection.collectScheduledGmail("owner");
+  const result = await h.collection.collectScheduledGmail("owner","synthetic-lease");
   assert.equal(result.complete, true); assert.equal(result.created_count, 2);
   assert.equal(h.items.length, 2); assert.ok(h.items.every(row => row.user_id === "owner"));
   const disconnected = collectionHarness({status:"disconnected"});
-  await assert.rejects(disconnected.collection.collectScheduledGmail("owner"), /CONNECTION_REQUIRED/);
+  await assert.rejects(disconnected.collection.collectScheduledGmail("owner","synthetic-lease"), /CONNECTION_REQUIRED/);
   assert.equal(disconnected.items.length, 0);
 });
 
 test("capped Gmail scans preserve prior success checkpoint and report partial", async () => {
-  const h=collectionHarness({capped:true}), result=await h.collection.collectScheduledGmail("owner");
+  const h=collectionHarness({capped:true}), result=await h.collection.collectScheduledGmail("owner","synthetic-lease");
   assert.equal(result.capped,true);assert.equal(result.complete,false);assert.equal(h.baselineWrites(),0);
   assert.equal(h.connection.sync_state.gmail.history_id,"90");assert.equal(h.items.length,2);
 });

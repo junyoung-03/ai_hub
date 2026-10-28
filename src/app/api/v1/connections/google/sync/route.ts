@@ -16,6 +16,8 @@ export async function POST(request: Request) {
     const messages = {
       CONNECTION_REQUIRED: "Google 메일을 먼저 연결해 주세요.",
       TOKEN_MISSING: "저장된 연결 인증이 없습니다. Google 메일을 재연결해 주세요.",
+      TOKEN_STORAGE_FAILED: "저장된 Google 연결 인증을 확인하지 못했습니다. 관리자 설정을 확인해 주세요.",
+      SYNC_LEASE_INVALID: "자동 수집의 실행 권한이 만료됐습니다. 다시 시도해 주세요.",
       REFRESH_FAILED: "Google 연결 인증을 갱신하지 못했습니다. 재연결 후 다시 시도해 주세요.",
       GMAIL_UNAVAILABLE: "Gmail을 조회하지 못했습니다. 잠시 후 다시 시도해 주세요.",
       SYNC_IN_PROGRESS: "이미 메일을 수집하고 있습니다. 완료 후 다시 시도해 주세요.",

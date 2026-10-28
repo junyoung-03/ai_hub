@@ -208,7 +208,20 @@ export async function getGoogleOAuthConnection(userId: string) {
   return data[0] ?? null;
 }
 
-async function getOwnedConnection(userId: string, connectionId: string) {
+type ScheduledGoogleAccess = { syncLeaseToken: string };
+async function getOwnedConnection(userId: string, connectionId: string, scheduled?: ScheduledGoogleAccess) {
+  if (scheduled) {
+    // A scheduler cannot use cookies. Its owner and live DB lease are checked on
+    // every credential read/refresh; the lease token never reaches a browser.
+    const admin = createAdminClient();
+    const rpc = admin.rpc.bind(admin) as unknown as (name: string, args: {p_owner:string;p_token:string}) => PromiseLike<{data:boolean | null;error:unknown}>;
+    const lease = await rpc("gmail_sync_lease_valid", {p_owner:userId,p_token:scheduled.syncLeaseToken});
+    if (lease.error || lease.data !== true) throw new Error("SCHEDULED_GOOGLE_LEASE_INVALID");
+    const { data, error } = await admin.from("connections").select("provider_account_id,scopes")
+      .eq("id",connectionId).eq("user_id",userId).eq("provider","google").eq("status","connected").maybeSingle();
+    if (error) throw new Error("Unable to verify Google connection ownership.");
+    return data?.provider_account_id ? {accountId:data.provider_account_id,scopes:data.scopes ?? []} : null;
+  }
   await verifyOwner(userId);
   const supabase = await createClient();
   const { data, error } = await supabase.from("connections")
@@ -251,8 +264,8 @@ export async function persistGoogleConnection(candidate: GoogleConnectionCandida
   }
 }
 
-export async function getGoogleConnectionTokens(userId: string, connectionId: string) {
-  const owned = await getOwnedConnection(userId, connectionId);
+export async function getGoogleConnectionTokens(userId: string, connectionId: string, scheduled?: ScheduledGoogleAccess) {
+  const owned = await getOwnedConnection(userId, connectionId, scheduled);
   if (!owned) return null;
   const accountId = owned.accountId;
   const { data, error } = await createAdminClient().rpc("get_google_connection_tokens", {
@@ -277,8 +290,9 @@ export async function refreshGoogleConnectionTokens(
   userId: string,
   connectionId: string,
   tokens: Pick<GoogleConnectionCandidate, "accessToken" | "refreshToken" | "tokenExpiresAt"> & { expectedAccessTokenCiphertext: string },
+  scheduled?: ScheduledGoogleAccess,
 ): Promise<boolean> {
-  const owned = await getOwnedConnection(userId, connectionId);
+  const owned = await getOwnedConnection(userId, connectionId, scheduled);
   if (!owned) return false;
   const accountId = owned.accountId;
   const key = getGoogleTokenEncryptionKey();
