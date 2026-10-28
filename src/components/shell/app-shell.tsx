@@ -12,6 +12,7 @@ export async function AppShell({
   demo = false,
   homeBackground = true,
   workspace = false,
+  contentWidth = "wide",
 }: {
   title: string;
   children: ReactNode;
@@ -19,6 +20,7 @@ export async function AppShell({
   demo?: boolean;
   homeBackground?: boolean;
   workspace?: boolean;
+  contentWidth?: "wide" | "reading";
 }) {
   const user = demo ? await getCurrentUser().catch(() => null) : await requirePageUser();
   const email = user?.email || "";
@@ -38,7 +40,7 @@ export async function AppShell({
         <TopBar email={email} />
       </Suspense>
       <main id="main-content" className="w-full pb-24 md:pb-12">
-        <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-10">
+        <div className={`mx-auto ${contentWidth === "reading" ? "max-w-[1100px]" : "max-w-[1600px]"} px-4 py-6 sm:px-6 lg:px-10`}>
           {!hideTitle && (
             <h1 className="mb-6 break-words text-xl font-semibold tracking-[-0.025em] text-slate-900">
               {title}

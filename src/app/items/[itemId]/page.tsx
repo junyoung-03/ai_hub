@@ -41,7 +41,7 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
     {item.contentText?.trim() ? <div className="mt-6 whitespace-pre-wrap break-words text-base leading-8 [overflow-wrap:anywhere]">{item.contentText}</div> : <p role="status" className="text-muted-foreground">{data.processing.message}</p>}
   </section>;
 
-  const insightPane = <aside className="min-w-0 space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5 lg:sticky lg:top-20" aria-labelledby="analysis-title">
+  const insightPane = <aside className="min-w-0 space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5" aria-labelledby="analysis-title">
     {item.source === "gmail" && await promotionalReady() && <NoiseControls itemId={item.id}/>}
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="analysis-title">분석과 할 일</h2>{data.aiAnalysis && item.processingStatus === "completed" && <span className="text-xs text-green">분석 완료</span>}</div>
     {item.processingStatus === "completed" && !data.aiAnalysis && <p role="status" className="text-sm text-muted-foreground">검증된 AI 분석 결과가 아직 없습니다.</p>}
@@ -83,5 +83,5 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
       {eligible && <AnalyzeControl itemId={item.id} status={item.processingStatus} analyzed={Boolean(data.aiAnalysis)} />}
     </div></details>
   </aside>;
-  return <AppShell title={item.title}><Link href="/library" className="text-sm text-primary">← 자료로 돌아가기</Link><div className="mt-4"><ItemMetadata item={item} processing={data.processing} /></div><ProcessingRefresh items={[{ id: item.id, processing: data.processing }]}/><DetailLayout original={originalPane} insight={insightPane} /></AppShell>;
+  return <AppShell title={item.title} contentWidth="reading"><Link href="/library" className="text-sm text-primary">← 자료로 돌아가기</Link><div className="mt-4"><ItemMetadata item={item} processing={data.processing} /></div><ProcessingRefresh items={[{ id: item.id, processing: data.processing }]}/><DetailLayout original={originalPane} insight={insightPane} /></AppShell>;
 }
