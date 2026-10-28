@@ -32,9 +32,8 @@ export function collectionOutcome(service: CollectionService, value: unknown): C
   const skipped = service === "calendar" ? count(result.skipped) : service === "drive" ? count(result.excluded) : 0;
   const stored = created + updated + reused;
   const stopReason = typeof result.stopReason === "string" && result.stopReason ? result.stopReason : null;
-  // Gmail complete refers to the bounded request, even when another mailbox page exists.
   const incomplete = failed > 0 || unprocessed > 0 || !!stopReason || result.complete === false
-    || (service !== "gmail" && (result.complete !== true || result.capped === true));
+    || result.capped === true || (service !== "gmail" && result.complete !== true);
   const kind = !incomplete ? "complete" : stored > 0 || skipped > 0 ? "partial" : "failed";
   const label = kind === "complete" ? "이번 수집 완료" : kind === "partial" ? "일부 수집" : "수집 실패";
   const details = [`신규 ${created}건`, `갱신 ${updated}건`, `기존 ${reused}건`];

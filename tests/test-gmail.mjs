@@ -156,10 +156,10 @@ test("fixed query, pagination, unique IDs, hard 100 cap and per-message full GET
   assert.equal(h.requests.length, 3);
 });
 
-function collectionHarness({ status = "connected", foreign = false, failMessage = false, missingConnection = false, candidateFailure = false } = {}) {
+function collectionHarness({ status = "connected", foreign = false, failMessage = false, missingConnection = false, candidateFailure = false, capped = false } = {}) {
   const items = [], calls = [];
   let stamp = 0, baselineWrites = 0;
-  const connection = { id: "connection", user_id: "owner", provider: "google", status, updated_at: "initial", sync_state: { gmail: { history_id: "90" }, retained: true } };
+  const connection = { id: "connection", user_id: "owner", provider: "google", status, scopes:["https://www.googleapis.com/auth/gmail.readonly"], updated_at: "initial", sync_state: { gmail: { history_id: "90" }, retained: true } };
   function db() {
     return { from(table) {
       let operation = "read", values, filters = [], list = false;
@@ -177,7 +177,8 @@ function collectionHarness({ status = "connected", foreign = false, failMessage 
         const matches = (row) => filters.every(([key, value]) => Array.isArray(value) ? value.includes(row[key]) : row[key] === value);
         if (table === "items" && list) return candidateFailure ? { data: null, error: { code: "synthetic" } } : { data: items.filter(matches).map(r => ({ ...r })), error: null };
         if (table === "connections") {
-          if (foreign || !matches(connection)) return { data: null, error: null };
+          if (foreign || !matches(connection)) return { data: list ? [] : null, error: null };
+          if (list) return { data: [{ ...connection }], error: null };
           if (operation === "update") { Object.assign(connection, values, { updated_at: `stamp${++stamp}` }); baselineWrites++; }
           return { data: { ...connection }, error: null };
         }
@@ -203,12 +204,28 @@ function collectionHarness({ status = "connected", foreign = false, failMessage 
     "@/lib/google/connections": { async getGoogleConnectionSummary() { return missingConnection ? null : { id: "connection", status }; } },
     "@/lib/google/gmail-message": parser,
     "@/lib/google/gmail-client": { ...errors, async createGmailClient() { return {
-      async profile() { return "100"; }, async list() { return { ids: ["fixture1", "fixture2"], capped: false }; },
+      async profile() { return "100"; }, async list() { return { ids: ["fixture1", "fixture2"], capped }; },
       async message(id) { if (failMessage && id === "fixture2") throw new Error("synthetic-private-message-error"); return message(id); },
     }; } },
   }, { process: { env: { GEMINI_MODEL: "gemini-fixture" } } });
   return { collection, client, items, connection, calls, baselineWrites: () => baselineWrites };
 }
+
+test("scheduled collector uses only its explicit owner and preserves normal collection semantics", async () => {
+  const h = collectionHarness();
+  const result = await h.collection.collectScheduledGmail("owner");
+  assert.equal(result.complete, true); assert.equal(result.created_count, 2);
+  assert.equal(h.items.length, 2); assert.ok(h.items.every(row => row.user_id === "owner"));
+  const disconnected = collectionHarness({status:"disconnected"});
+  await assert.rejects(disconnected.collection.collectScheduledGmail("owner"), /CONNECTION_REQUIRED/);
+  assert.equal(disconnected.items.length, 0);
+});
+
+test("capped Gmail scans preserve prior success checkpoint and report partial", async () => {
+  const h=collectionHarness({capped:true}), result=await h.collection.collectScheduledGmail("owner");
+  assert.equal(result.capped,true);assert.equal(result.complete,false);assert.equal(h.baselineWrites(),0);
+  assert.equal(h.connection.sync_state.gmail.history_id,"90");assert.equal(h.items.length,2);
+});
 
 test("Gmail committed collection offers only current-run unanalysed IDs; analysed skips and discovery failure keeps success", async () => {
   const h = collectionHarness(), p = load("src/lib/items/analysis-policy.ts");

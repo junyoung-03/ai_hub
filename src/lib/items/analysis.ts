@@ -76,9 +76,12 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
     let scope: ReturnType<typeof freeAnalysisScope>;
     try { scope = freeAnalysisScope(); }
     catch { throw new ItemAnalysisError("ANALYSIS_WORKER_UNAVAILABLE"); }
-    if (!scope.users.includes(user.id.toLowerCase()) || !scope.items.includes(itemId.toLowerCase())) throw new ItemAnalysisError("ANALYSIS_SCOPE_UNAVAILABLE");
+    if (!scope.users.includes(user.id.toLowerCase())) throw new ItemAnalysisError("ANALYSIS_SCOPE_UNAVAILABLE");
+    const automatic = await analysisJobRpc(supabase, "gmail_automatic_available", {});
+    const autoEnabled = !automatic.error && automatic.data === true;
+    if (!autoEnabled && !scope.items.includes(itemId.toLowerCase())) throw new ItemAnalysisError("ANALYSIS_SCOPE_UNAVAILABLE");
     // Admission and the returned state share a transaction; a live claim is not a new queued job.
-    const queued = await analysisJobRpc(supabase, "request_gmail_analysis", { p_item_id: itemId });
+    const queued = await analysisJobRpc(supabase, autoEnabled ? "request_automatic_gmail_analysis" : "request_gmail_analysis", { p_item_id: itemId });
     if (queued.error) throw new ItemAnalysisError(queued.error.code === "22023" ? "INVALID_ANALYSIS_INPUT"
       : queued.error.code === "PT403" ? "ANALYSIS_SCOPE_UNAVAILABLE" : queued.error.code === "PT503" ? "ANALYSIS_WORKER_PAUSED"
       : queued.error.code === "PT502" ? "ANALYSIS_WORKER_UNAVAILABLE" : "ANALYSIS_STORAGE_UNAVAILABLE");

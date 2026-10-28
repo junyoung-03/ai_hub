@@ -21,6 +21,8 @@ test('worker safe failure codes separate HTTP/config/timeout/validation/storage 
   }
   assert.equal(failure.analysisFailure(new client.GeminiAnalysisError('GEMINI_UNAVAILABLE',undefined,'timeout')).code,'GEMINI_TIMEOUT');
   assert.equal(failure.analysisFailure(new validator.AnalysisValidationError()).retrySeconds,null);
+  assert.equal(failure.analysisFailure(new validator.AnalysisValidationError('REQUIREMENTS')).code,'ANALYSIS_VALIDATION_REQUIREMENTS');
+  assert.equal(failure.analysisFailure(new validator.AnalysisValidationError('private body')).code,'ANALYSIS_VALIDATION_FAILED');
   assert.equal(failure.analysisFailure(new client.GeminiAnalysisError('GEMINI_NOT_CONFIGURED')).retrySeconds,null);
   assert.equal(failure.analysisFailure(new Error('ANALYSIS_STORAGE_UNAVAILABLE')).retrySeconds,60);
   assert.equal(failure.analysisFailure(new Error('private source text')).code,'ANALYSIS_FAILED');
@@ -60,6 +62,7 @@ test('free Vercel entrypoint rejects unauthorized calls before admin access and 
   const route=load('src/app/api/internal/gmail-analysis/route.ts',{
     '@/lib/items/free-analysis-config':{freeAnalysisConfig:authorization=>{if(authorization!=='Bearer synthetic')throw new Error('UNAUTHORIZED');return {users:[owner],items:[id(1)]};}},
     '@/lib/supabase/admin':{createAdminClient:()=>{adminCalls++;return {}; }},
+    '@/lib/items/analysis-job-rpc':{analysisJobRpc:async()=>({data:null,error:{code:'42883'}})},
     '../../../../../workers/analysis/runner':{runAnalysisBatch:async(_admin,users,count,items)=>{invocations++;assert.deepEqual(users,[owner]);assert.deepEqual(items,[id(1)]);assert.equal(count,1);return {complete:1};}},
   },{Error});
   assert.equal((await route.POST(new Request('https://synthetic.invalid',{method:'POST'}))).status,401);
@@ -68,6 +71,31 @@ test('free Vercel entrypoint rejects unauthorized calls before admin access and 
   assert.equal(adminCalls,0);
   const result=await route.POST(new Request('https://synthetic.invalid',{method:'POST',headers:{authorization:'Bearer synthetic'}}));
   assert.equal(result.status,200);assert.equal((await result.json()).complete,1);assert.equal(invocations,1);
+});
+
+test('automatic sync authenticates the route, holds one lease and records sanitized outcomes',async()=>{
+ const secret='s'.repeat(40), stamp=String(Math.floor(Date.now()/1000));
+ const config=load('src/lib/items/free-analysis-config.ts',{}, {Error,process:{env:{GMAIL_ANALYSIS_CRON_SECRET:secret}}});
+ const sign=path=>createHmac('sha256',secret).update(`POST\n${path}\n${stamp}`).digest('hex');
+ assert.throws(()=>config.authenticateScheduler(null,stamp,sign('/api/internal/gmail-analysis'),'/api/internal/gmail-sync'),/UNAUTHORIZED/);
+ let reads=0,collects=0,finished=[]; let cap=false, fail=false;
+ class CollectionError extends Error { constructor(code){super(code);this.code=code;} }
+ const route=load('src/app/api/internal/gmail-sync/route.ts',{
+  '@/lib/items/free-analysis-config':config,
+  '@/lib/items/free-analysis-scope':{freeAnalysisScope:()=>({users:[owner]})},
+  '@/lib/supabase/admin':{createAdminClient:()=>({})},
+  '@/lib/google/gmail-client':{GmailCollectionError:CollectionError},
+  '@/lib/google/gmail-collection':{collectScheduledGmail:async user=>{collects++;assert.equal(user,owner);if(fail)throw new CollectionError('REFRESH_FAILED');return {complete:true,capped:cap,collected_count:1,created_count:1,updated_count:0,failed_count:0,analysisItemIds:['secret-id']};}},
+  '@/lib/items/analysis-job-rpc':{analysisJobRpc:async(_admin,name,args)=>{reads++; if(name==='gmail_automation_state')return {data:{enabled:true,owner},error:null};if(name==='claim_gmail_sync')return {data:{token:id(9)},error:null};if(name==='finish_gmail_sync'){finished.push(args);return {data:true,error:null};}throw new Error('unexpected RPC');}},
+ },{Error});
+ const request=(headers={},body='{}')=>new Request('https://synthetic.invalid',{method:'POST',headers,body});
+ assert.equal((await route.POST(request())).status,401);assert.equal(reads,0);
+ const headers={'x-etc-timestamp':stamp,'x-etc-signature':sign('/api/internal/gmail-sync')};
+ assert.equal((await route.POST(request(headers,'{"owner":"other"}'))).status,400);assert.equal(collects,0);
+ const ok=await route.POST(request(headers));assert.equal(ok.status,200);assert.equal((await ok.json()).state,'complete');assert.equal(finished.at(-1).p_state,'complete');
+ cap=true;assert.equal((await (await route.POST(request(headers))).json()).state,'partial');
+ fail=true;const failed=await route.POST(request(headers));assert.equal(failed.status,503);assert.equal(finished.at(-1).p_error_code,'REFRESH_FAILED');
+ assert.ok(!JSON.stringify(finished).includes('secret-id'));
 });
 
 test('provider evidence locators are constrained to unknown/null; server still validates quotes and derives offsets',()=>{
@@ -92,7 +120,7 @@ test('authenticated Gmail API enqueues the approved owner without calling Gemini
   const api=load('src/lib/items/analysis.ts',{'@/lib/gemini/validation':validator,'@/lib/gemini/client':client,
     '@/lib/items/analysis-failure':failure,'@/lib/items/filters':{isItemId:()=>true},
     '@/lib/supabase/auth':{requireUser:async()=>({id:owner})},
-    '@/lib/supabase/server':{createClient:async()=>({from:()=>q,rpc:async(name,args)=>{calls++;assert.equal(name,'request_gmail_analysis');assert.equal(args.p_item_id,id(1));return {data:{state:'pending',processingStatus:'queued'},error:null};}})},
+    '@/lib/supabase/server':{createClient:async()=>({from:()=>q,rpc:async(name,args)=>{if(name==='gmail_automatic_available')return {data:false,error:null};calls++;assert.equal(name,'request_gmail_analysis');assert.equal(args.p_item_id,id(1));return {data:{state:'pending',processingStatus:'queued'},error:null};}})},
     '@/lib/supabase/admin':{createAdminClient:()=>{throw new Error('must not write');}}},
     {process:{env:{GMAIL_ANALYSIS_WORKER_ENABLED:'true',GMAIL_ANALYSIS_ALLOWED_USERS:owner,GMAIL_ANALYSIS_DEMO_ITEM_IDS:id(1),GEMINI_FREE_TIER_CONFIRMED:'true',GMAIL_ANALYSIS_CRON_SECRET:'s'.repeat(40)}}});
   assert.equal((await api.analyzeOwnedItem(id(1))).queued,true);assert.equal(calls,1);
@@ -165,7 +193,11 @@ test('queue SQL: real persistence, leases, retries, owner boundary, source/evide
       assert.equal(await scalar('select processing_status from public.items where id=$1',[id(6)]),'failed');
     });
     await t.test('metadata/title snapshot change cannot store an obsolete result',async()=>{
-      await seed(7);const old=await claim();await db.query("update public.items set title='Changed TEST title' where id=$1",[id(7)]);
+      await seed(7);const old=await claim();
+      // PGlite's test clock can return the same millisecond for separate transactions.
+      // This case verifies the changed-snapshot fence, so ensure its prerequisite.
+      await new Promise(resolve=>setTimeout(resolve,10));
+      await db.query("update public.items set title='Changed TEST title' where id=$1",[id(7)]);
       assert.equal((await finish(old,validator.validateAnalysis(fixture(),content))).stale,true);
       j=await claim();assert.equal(j.itemId,id(7));await finish(j,null,'GEMINI_HTTP_400',null);
       assert.equal(await scalar('select count(*)::int from public.actions where user_id=$1',[owner]),1);

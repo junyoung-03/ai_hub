@@ -1,10 +1,13 @@
 import { GeminiAnalysisError } from "@/lib/gemini/client";
 import { AnalysisValidationError } from "@/lib/gemini/validation";
 
+// Only predefined validation rules may be persisted. Never persist exception text.
+const validationRules = new Set(["SCHEMA", "EVIDENCE", "LOCATOR", "OBSERVATION", "DATE_EVIDENCE", "DATE_INFERENCE", "DEADLINE_ROLE", "START_ROLE", "TIMEZONE_INFERENCE", "TOPIC", "ACTION_TITLE_INTENT", "ACTION_EVIDENCE_INTENT", "REQUIREMENTS", "DUPLICATE_CANDIDATE", "NOISE_EVIDENCE", "NOISE_REASON"]);
+
 /** Only safe codes leave the server; never persist provider bodies or source content. */
 export function analysisFailure(error: unknown, attempt = 1): { code: string; retrySeconds: number | null } {
   const backoff = Math.min(3600, 60 * 2 ** Math.max(0, Math.min(5, attempt - 1)));
-  if (error instanceof AnalysisValidationError) return { code: "ANALYSIS_VALIDATION_FAILED", retrySeconds: null };
+  if (error instanceof AnalysisValidationError) return { code: validationRules.has(error.rule) ? `ANALYSIS_VALIDATION_${error.rule}` : "ANALYSIS_VALIDATION_FAILED", retrySeconds: null };
   if (error instanceof GeminiAnalysisError) {
     if (error.httpStatus) return { code: `GEMINI_HTTP_${error.httpStatus}`, retrySeconds: [429,500,502,503,504].includes(error.httpStatus) ? Math.max(backoff, error.retryAfterSeconds ?? 0) : null };
     if (error.code === "GEMINI_UNAVAILABLE") return { code: error.reason === "timeout" ? "GEMINI_TIMEOUT" : "GEMINI_NETWORK_ERROR", retrySeconds: backoff };
