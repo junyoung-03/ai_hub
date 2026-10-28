@@ -41,6 +41,7 @@ export function GoogleSignInButton({
         options: {
           redirectTo: new URL("/auth/callback", window.location.origin).href,
           scopes: "openid email profile",
+          queryParams: { prompt: "select_account" },
         },
       });
       if (error || !data.url) throw new Error("Login unavailable.");
