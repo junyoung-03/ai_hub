@@ -15,9 +15,13 @@ export function ProcessingStatus({ status, summary }: { status: ItemList["items"
   return <span className={`inline-flex text-xs ${status === "failed" ? "rounded bg-rose-soft px-1.5 text-rose" : status === "completed" ? "text-green" : "text-faint"}`}>{summary?.label ?? statusLabels[status]}</span>;
 }
 
-export function ClassificationSummary({ value, detailed = false }: { value: ItemDetail["classification"]; detailed?: boolean }) {
+export function ClassificationSummary({ value, detailed = false, compact = false }: { value: ItemDetail["classification"]; detailed?: boolean; compact?: boolean }) {
   if (!value.available) return <p className="text-sm text-muted-foreground">아직 분류 결과가 없습니다.</p>;
   const origin = (value: string) => value === "user" ? "직접 수정" : "AI 자동분류";
+  if (compact) return <div className="space-y-1.5 text-sm">
+    <p className="break-words"><span className="sr-only">주제: </span>{value.primaryTopic ?? "미분류"}<span className="mx-2 text-faint">·</span><span className="sr-only">자료 성격: </span>{value.documentType ? documentLabels[value.documentType] : "미분류"}<span className="ml-2 text-xs text-muted-foreground">{origin(value.origin)}</span></p>
+    {value.tags.length > 0 && <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground" aria-label="태그">{value.tags.map((tag,index) => <span className="break-words" key={`${index}:${tag}`}>#{tag}</span>)}</div>}
+  </div>;
   return (
     <div className="space-y-2 text-sm">
       <p className="text-sm text-muted-foreground">{origin(value.origin)}</p>
