@@ -12,6 +12,8 @@ import { ManualTextControls } from "@/components/items/manual-text-controls";
 import { MaterialFocus } from "@/components/library/material-focus";
 import { PageHeading } from "@/components/shell/page-heading";
 import { ProcessingRefresh } from "@/components/items/processing-refresh";
+import { SearchWorkspace } from "@/components/search/search-workspace";
+import { getWorkspaceClock } from "@/components/workspace/request-clock";
 
 export default async function LibraryPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePageUser();
@@ -21,6 +23,16 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
     if (Array.isArray(value)) value.forEach((entry) => params.append(key, entry));
     else if (value !== undefined) params.set(key, value);
   }
+  const searchTerms = params.getAll("q");
+  const searchQuery = searchTerms.length === 1 ? searchTerms[0].trim().slice(0, 500) : "";
+  if (searchQuery) {
+    const [initialNow, promotionalEnabled] = await Promise.all([getWorkspaceClock(), promotionalPromise]);
+    return <AppShell title="자료함" hideTitle workspace demo>
+      <PageHeading title="자료함 검색" description="자료와 연결된 할 일을 검색합니다." />
+      <SearchWorkspace key={searchQuery} initialQuery={searchQuery} initialNow={initialNow} promotionalEnabled={promotionalEnabled} backHref="/library" />
+    </AppShell>;
+  }
+  params.delete("q");
   let query;
   try { query = parseItemQuery(params); }
   catch (error) {
