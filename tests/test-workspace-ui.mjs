@@ -8,6 +8,29 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 const load=uiLoader();
 
+test('today search and suggested searches open library results',()=>{
+ const routes=[];
+ let stateIndex=0;
+ const ui=uiLoader({
+  react:{useState:initial=>[stateIndex++===0?'  계약 & 문서  ':initial,()=>{}]},
+  'next/navigation':{useRouter:()=>({push:path=>routes.push(path)})},
+  '@/components/actions/use-workspace-data':{useActions:()=>({rows:[]}),useScheduleItems:()=>({details:{}})},
+  '@/components/actions/schedule-model':{eventsFromDetail:()=>[]},
+  './today-calendar':{TodayCalendar:()=>null},
+  './today-todo-list':{TodayTodoList:()=>null},
+  './add-todo-modal':{AddTodoModal:()=>null},
+ });
+ const tree=ui('src/components/home/today-dashboard.tsx').TodayDashboard({today:'2026-10-28'});
+ const find=(node,predicate)=>{
+  if(!node||typeof node!=='object')return undefined;
+  if(predicate(node))return node;
+  for(const child of React.Children.toArray(node.props?.children)){const found=find(child,predicate);if(found)return found;}
+ };
+ find(tree,node=>node.type==='form').props.onSubmit({preventDefault(){}});
+ find(tree,node=>node.type==='button'&&node.props.children==='회의').props.onClick();
+ assert.deepEqual(routes,['/library?q='+encodeURIComponent('계약 & 문서'),'/library?q='+encodeURIComponent('회의')]);
+});
+
 test('library search renders the existing search workspace in library context',async()=>{
  let observed;
  const ui=uiLoader({
