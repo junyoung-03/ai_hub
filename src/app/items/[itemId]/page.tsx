@@ -16,6 +16,7 @@ import { ProcessingRefresh } from "@/components/items/processing-refresh";
 import { createClient } from "@/lib/supabase/server";
 import { analysisJobRpc } from "@/lib/items/analysis-job-rpc";
 import { processingErrorMessage } from "@/lib/items/processing";
+import { libraryReturnUrl } from "@/lib/items/library-navigation";
 
 function actionDeadlineText(action: ItemDetail["actions"][number]) {
   if (action.deadlineStatus === "needs_review") return "마감일 확인 필요";
@@ -27,9 +28,10 @@ function actionDeadlineText(action: ItemDetail["actions"][number]) {
   return `${new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(date)}까지`;
 }
 
-export default async function ItemPage({ params }: { params: Promise<{ itemId: string }> }) {
+export default async function ItemPage({ params, searchParams }: { params: Promise<{ itemId: string }>; searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePageUser();
   const { itemId } = await params;
+  const returnTo = libraryReturnUrl((await searchParams)?.returnTo);
   let data: ItemDetail | null;
   try { data = await getItemDetail(itemId); }
   catch { return <AppShell title="자료 상세"><div role="alert" className="panel"><p>자료를 불러오지 못했습니다.</p><a href={`/items/${itemId}`} className="btn-secondary mt-3">다시 시도</a></div></AppShell>; }
@@ -92,5 +94,5 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
       {eligible && <AnalyzeControl itemId={item.id} status={item.processingStatus} analyzed={Boolean(data.aiAnalysis)} />}
     </div></details>
   </aside>;
-  return <AppShell title={item.title} contentWidth="reading"><Link href="/library" className="text-sm text-primary">← 자료로 돌아가기</Link><div className="mt-4"><ItemMetadata item={item} processing={data.processing} /></div><ProcessingRefresh items={[{ id: item.id, processing: data.processing }]}/><DetailLayout original={originalPane} insight={insightPane} /></AppShell>;
+  return <AppShell title={item.title} contentWidth="reading"><Link href={returnTo} className="text-sm text-primary">← 자료로 돌아가기</Link><div className="mt-4"><ItemMetadata item={item} processing={data.processing} /></div><ProcessingRefresh items={[{ id: item.id, processing: data.processing }]}/><DetailLayout original={originalPane} insight={insightPane} /></AppShell>;
 }

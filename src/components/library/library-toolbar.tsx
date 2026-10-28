@@ -4,6 +4,7 @@ import { documentLabels, formatLabels, statusLabels } from "@/lib/items/presenta
 import { libraryUrl, type ItemQuery } from "@/lib/items/filters";
 import { workspaceSources } from "@/components/workspace/workspace-ui";
 import { PromotionalToggle } from "@/components/library/promotional-toggle";
+import { LibraryFilterPanel } from "@/components/library/library-filter-panel";
 
 export function LibraryToolbar({ query, promotionalEnabled = false }: { query: ItemQuery; promotionalEnabled?: boolean }) {
   const { filters } = query;
@@ -22,8 +23,7 @@ export function LibraryToolbar({ query, promotionalEnabled = false }: { query: I
       })}
     </nav>
     {promotionalEnabled && <PromotionalToggle enabled={Boolean(filters.includePromotional)} href={libraryUrl({ ...query, filters: { ...filters, includePromotional: filters.includePromotional ? undefined : "true" } })}/>}
-    <details open={hasFilters}>
-      <summary className="w-fit cursor-pointer rounded-lg px-1 py-2 text-xs text-slate-500">분류 · 상세 필터{hasFilters ? " · 적용 중" : ""}</summary>
+    <LibraryFilterPanel active={hasFilters}>
       <form action="/library" method="get" className="mt-2 space-y-3 rounded-xl border border-slate-200/70 bg-white/80 p-4">
         {(["source", "includePromotional"] as const).map(key => filters[key] && <input key={key} type="hidden" name={key} value={filters[key]}/>)}
         <label className="block text-xs text-slate-500">처리 상태<select name="processingStatus" defaultValue={filters.processingStatus ?? ""} className={selectClass}><option value="">모든 처리 상태</option>{Constants.public.Enums.processing_status.map(value => <option key={value} value={value}>{statusLabels[value]}</option>)}</select></label>
@@ -40,7 +40,7 @@ export function LibraryToolbar({ query, promotionalEnabled = false }: { query: I
         {query.limit !== 30 && <input type="hidden" name="limit" value={query.limit}/>}
         <div className="flex items-center gap-4"><button className="min-h-10 rounded-xl border border-[#ced9ea] bg-white px-4 text-xs text-[#5f7fae]">필터 적용</button><Link href={resetUrl} className="text-xs text-slate-500 underline">필터 해제</Link></div>
       </form>
-    </details>
+    </LibraryFilterPanel>
     {filters.processingStatus && <p className="text-xs text-slate-500">처리 상태: {statusLabels[filters.processingStatus]} <Link href={resetUrl} className="underline">조건 해제</Link></p>}
   </div>;
 }

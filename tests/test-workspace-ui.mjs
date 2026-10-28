@@ -66,8 +66,49 @@ test('classification filter form submits existing topic and documentType exactly
  const html=renderToStaticMarkup(React.createElement(LibraryToolbar,{query}));
  assert.equal((html.match(/name="topic"/g)||[]).length,1);
  assert.equal((html.match(/name="documentType"/g)||[]).length,1);
- assert.match(html,/name="source" value="gmail"/);assert.match(html,/<details open=""/);
+ assert.match(html,/name="source" value="gmail"/);assert.match(html,/<details>/);
+ assert.doesNotMatch(html,/<details open/);assert.match(html,/상세 필터 · 적용 중/);
  assert.match(html,/value="User topic"/);assert.match(html,/<option value="notice" selected=""/);
+});
+test('library detail links carry the applied filters and current page back to the library',()=>{
+ const {LibraryList}=load('src/components/library/library-list.tsx');
+ const {effectiveClassification}=load('src/lib/items/presentation.ts');
+ const returnTo='/library?source=gmail&topic='+encodeURIComponent('공모전')+'&processingStatus=completed&cursor=synthetic-page';
+ const item={id:'synthetic',title:'Synthetic',source:'gmail',format:'email',processingStatus:'completed',createdAt:'2026-10-13T00:00:00Z',classification:effectiveClassification(null)};
+ const html=renderToStaticMarkup(React.createElement(LibraryList,{items:[item],returnTo}));
+ assert.ok(html.includes('/items/synthetic?returnTo='+encodeURIComponent(returnTo)));
+ const {libraryReturnUrl}=load('src/lib/items/library-navigation.ts');
+ assert.equal(libraryReturnUrl(returnTo),returnTo);
+ for(const unsafe of [undefined,['/library?source=gmail'],'https://external.invalid/library','//external.invalid/library','/library/../settings','/library-other','/library?'+ 'a'.repeat(8192)]) assert.equal(libraryReturnUrl(unsafe),'/library');
+});
+
+test('advanced filters close on mount, browser restoration and cached page reactivation',()=>{
+ let effect;
+ const panel={current:{open:true}};
+ const listeners=new Map();
+ const browser={addEventListener:(name,handler)=>listeners.set(name,handler),removeEventListener:(name,handler)=>{if(listeners.get(name)===handler)listeners.delete(name);}};
+ const exports={};
+ const code=ts.transpileModule(readFileSync(new URL('../src/components/library/library-filter-panel.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+ runInNewContext(code,{exports,window:browser,require:name=>{
+  if(name==='react')return {useRef:()=>panel,useEffect:callback=>{effect=callback;}};
+  if(name==='next/navigation')return {usePathname:()=>'/library'};
+  if(name==='react/jsx-runtime')return {jsx:React.createElement,jsxs:React.createElement};
+  throw new Error(name);
+ }});
+ exports.LibraryFilterPanel({active:true,children:null});
+ let cleanup=effect();
+ assert.equal(panel.current.open,false);
+ panel.current.open=true; // The user can expand the controls while on the page.
+ listeners.get('pageshow')();
+ assert.equal(panel.current.open,false);
+ panel.current.open=true;
+ cleanup(); // Next.js can hide and later reactivate the cached page.
+ assert.equal(panel.current.open,false);
+ assert.equal(listeners.size,0);
+ panel.current.open=true;
+ cleanup=effect();
+ assert.equal(panel.current.open,false);
+ cleanup();
 });
 const output={};
 runInNewContext(ts.transpileModule(readFileSync(new URL('../src/components/actions/schedule-model.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:output,Date,Intl});

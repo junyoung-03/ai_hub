@@ -158,7 +158,11 @@ test("Detail hides analysis for missing text, preserves original/evidence, and e
     "@/components/shell/app-shell": { AppShell: ({ children }) => React.createElement("main", {}, children) },
     "@/components/items/processing-refresh": { ProcessingRefresh: () => null },
   });
-  const html = renderToStaticMarkup(await load("src/app/items/[itemId]/page.tsx").default({ params: Promise.resolve({ itemId: id }) }));
+  const Page = load("src/app/items/[itemId]/page.tsx").default;
+  const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ itemId: id }), searchParams: Promise.resolve({ returnTo: "/library?source=gmail&processingStatus=completed" }) }));
+  assert.match(html, /href="\/library\?source=gmail&amp;processingStatus=completed"/);
+  const fallback = renderToStaticMarkup(await Page({ params: Promise.resolve({ itemId: id }), searchParams: Promise.resolve({ returnTo: "https://external.invalid" }) }));
+  assert.match(fallback, /href="\/library"/);
   assert.match(html, /분석 불가 · 본문 없음/); assert.match(html, /저장된 본문이 없어/);
   assert.match(html, /https:\/\/mail.google.com\//); assert.match(html, /최근 변경/);
   assert.doesNotMatch(html, /AI 분석하기|AI 분석 관리/);
