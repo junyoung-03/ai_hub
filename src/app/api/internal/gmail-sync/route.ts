@@ -8,7 +8,7 @@ import type { Json } from "@/types/database";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-const safeErrors = new Set(["CONNECTION_REQUIRED", "TOKEN_MISSING", "REFRESH_FAILED", "GMAIL_UNAVAILABLE", "SYNC_IN_PROGRESS", "STORAGE_FAILED"]);
+const safeErrors = new Set(["CONNECTION_REQUIRED", "TOKEN_MISSING", "TOKEN_STORAGE_FAILED", "SYNC_LEASE_INVALID", "REFRESH_FAILED", "GMAIL_UNAVAILABLE", "SYNC_IN_PROGRESS", "STORAGE_FAILED"]);
 const object = (v: Json | null): { [key:string]: Json | undefined } | null => v && typeof v === "object" && !Array.isArray(v) ? v : null;
 
 /** Scheduler-only, fixed owner. No request can choose a mailbox or content. */
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     if (typeof token !== "string") return Response.json({state:"busy"});
     let result: {collected_count:number;created_count:number;updated_count:number;failed_count:number;complete:boolean;capped:boolean} | null = null;
     let code: string | null = null;
-    try { result = await collectScheduledGmail(users[0]); }
+    try { result = await collectScheduledGmail(users[0],token); }
     catch (error) { code = error instanceof GmailCollectionError && safeErrors.has(error.code) ? error.code : "SYNC_FAILED"; }
     const outcome = code ? "failed" : result?.complete && !result.capped ? "complete" : "partial";
     if (!code && outcome === "partial") code = result?.capped ? "GMAIL_RESULT_LIMIT" : "GMAIL_PARTIAL_FAILURE";

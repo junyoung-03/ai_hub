@@ -94,21 +94,21 @@ export async function collectInitialGmail() {
 }
 
 /** Server-controlled owner only. The caller must hold the distributed automation lease. */
-export async function collectScheduledGmail(userId: string) {
+export async function collectScheduledGmail(userId: string, syncLeaseToken: string) {
   const admin = createAdminClient();
   const { data: connections, error } = await admin.from("connections").select("id,scopes")
     .eq("user_id", userId).eq("provider", "google").eq("status", "connected").limit(2);
   if (error) throw new GmailCollectionError("STORAGE_FAILED");
   if (!connections || connections.length !== 1 || !connections[0].scopes.includes("https://www.googleapis.com/auth/gmail.readonly")) throw new GmailCollectionError("CONNECTION_REQUIRED");
-  return collectGmailForOwner(userId, connections[0].id);
+  return collectGmailForOwner(userId, connections[0].id, {syncLeaseToken});
 }
 
-async function collectGmailForOwner(userId: string, connectionId: string) {
+async function collectGmailForOwner(userId: string, connectionId: string, scheduled?: {syncLeaseToken:string}) {
   const key = `${userId}:${connectionId}`;
   if (active.has(key)) throw new GmailCollectionError("SYNC_IN_PROGRESS");
   active.add(key);
   try {
-    const gmail = await createGmailClient(userId, connectionId), admin = createAdminClient();
+    const gmail = await createGmailClient(userId, connectionId, scheduled), admin = createAdminClient();
     const historyId = await gmail.profile(); // Capture BEFORE enumeration, not after it.
     const { ids, capped } = await gmail.list();
     const counts = { collected_count: 0, created_count: 0, updated_count: 0, skipped_count: 0, failed_count: 0 };

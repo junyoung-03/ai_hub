@@ -85,7 +85,7 @@ test('automatic sync authenticates the route, holds one lease and records saniti
   '@/lib/items/free-analysis-scope':{freeAnalysisScope:()=>({users:[owner]})},
   '@/lib/supabase/admin':{createAdminClient:()=>({})},
   '@/lib/google/gmail-client':{GmailCollectionError:CollectionError},
-  '@/lib/google/gmail-collection':{collectScheduledGmail:async user=>{collects++;assert.equal(user,owner);if(fail)throw new CollectionError('REFRESH_FAILED');return {complete:true,capped:cap,collected_count:1,created_count:1,updated_count:0,failed_count:0,analysisItemIds:['secret-id']};}},
+  '@/lib/google/gmail-collection':{collectScheduledGmail:async (user,token)=>{collects++;assert.equal(user,owner);assert.equal(token,id(9));if(fail)throw new CollectionError('REFRESH_FAILED');return {complete:true,capped:cap,collected_count:1,created_count:1,updated_count:0,failed_count:0,analysisItemIds:['secret-id']};}},
   '@/lib/items/analysis-job-rpc':{analysisJobRpc:async(_admin,name,args)=>{reads++; if(name==='gmail_automation_state')return {data:{enabled:true,owner},error:null};if(name==='claim_gmail_sync')return {data:{token:id(9)},error:null};if(name==='finish_gmail_sync'){finished.push(args);return {data:true,error:null};}throw new Error('unexpected RPC');}},
  },{Error});
  const request=(headers={},body='{}')=>new Request('https://synthetic.invalid',{method:'POST',headers,body});

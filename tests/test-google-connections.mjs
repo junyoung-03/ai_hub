@@ -12,6 +12,7 @@ let currentUser = owner;
 let connected = true;
 let bundle = null;
 let lastRpcArgs = null;
+let leaseValid = true;
 const oldKey = process.env.GOOGLE_DATA_TOKEN_ENCRYPTION_KEY;
 process.env.GOOGLE_DATA_TOKEN_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
@@ -51,7 +52,9 @@ const cookieClient = {
   },
 };
 const adminClient = {
+  from() { return cookieClient.from(); },
   async rpc(name, args) {
+    if(name === "gmail_sync_lease_valid") return {data:leaseValid && args.p_owner===owner && args.p_token==="synthetic-lease",error:null};
     assert.equal(args.p_user_id, owner);
     lastRpcArgs = args;
     if (name === "get_google_connection_tokens") {
@@ -118,6 +121,12 @@ try {
   await assert.rejects(connections.persistGoogleConnection(candidate), /ownership mismatch/);
   await assert.rejects(connections.getGoogleConnectionTokens(owner, connectionId), /ownership mismatch/);
   await assert.rejects(connections.refreshGoogleConnectionTokens(owner, connectionId, candidate), /ownership mismatch/);
+  // The background path works without a browser user only with an owner-bound live lease.
+  assert.equal((await connections.getGoogleConnectionTokens(owner, connectionId,{syncLeaseToken:"synthetic-lease"})).accessToken,"synthetic-access-3");
+  await assert.rejects(connections.getGoogleConnectionTokens(owner,connectionId,{syncLeaseToken:"wrong"}),/SCHEDULED_GOOGLE_LEASE_INVALID/);
+  leaseValid=false;
+  await assert.rejects(connections.getGoogleConnectionTokens(owner,connectionId,{syncLeaseToken:"synthetic-lease"}),/SCHEDULED_GOOGLE_LEASE_INVALID/);
+  leaseValid=true;
   currentUser = owner;
   await connections.disconnectGoogleConnection(connectionId);
   assert.equal(bundle, null);

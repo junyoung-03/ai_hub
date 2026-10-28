@@ -7,14 +7,16 @@ import { record } from "@/lib/google/gmail-message";
 export const INITIAL_GMAIL_QUERY = "in:inbox newer_than:30d";
 export const INITIAL_GMAIL_LIMIT = 100;
 export class GmailCollectionError extends Error {
-  constructor(public readonly code: "CONNECTION_REQUIRED" | "TOKEN_MISSING" | "REFRESH_FAILED" | "GMAIL_UNAVAILABLE" | "SYNC_IN_PROGRESS" | "STORAGE_FAILED") {
+  constructor(public readonly code: "CONNECTION_REQUIRED" | "TOKEN_MISSING" | "TOKEN_STORAGE_FAILED" | "SYNC_LEASE_INVALID" | "REFRESH_FAILED" | "GMAIL_UNAVAILABLE" | "SYNC_IN_PROGRESS" | "STORAGE_FAILED") {
     super(code);
   }
 }
 
 /** The token is closed over by server-only callers, never returned to a route. */
-export async function createGmailClient(userId: string, connectionId: string) {
-  const saved = await getGoogleConnectionTokens(userId, connectionId);
+export async function createGmailClient(userId: string, connectionId: string, scheduled?: {syncLeaseToken:string}) {
+  let saved;
+  try { saved = await getGoogleConnectionTokens(userId, connectionId, scheduled); }
+  catch (error) { throw new GmailCollectionError(error instanceof Error && error.message === "SCHEDULED_GOOGLE_LEASE_INVALID" ? "SYNC_LEASE_INVALID" : "TOKEN_STORAGE_FAILED"); }
   if (!saved) throw new GmailCollectionError("TOKEN_MISSING");
   let accessToken = saved.accessToken, refreshToken = saved.refreshToken, expiresAt = saved.expiresAt;
   let expectedAccessTokenCiphertext = saved.accessTokenCiphertext;
@@ -25,8 +27,8 @@ export async function createGmailClient(userId: string, connectionId: string) {
       try {
         if (!refreshToken) throw new Error("Missing refresh credentials.");
         const next = await refreshGoogleAccessToken(refreshToken, requiredScopes);
-        if (!await refreshGoogleConnectionTokens(userId, connectionId, { ...next, expectedAccessTokenCiphertext })) throw new Error("Connection no longer active.");
-        const stored = await getGoogleConnectionTokens(userId, connectionId);
+        if (!await refreshGoogleConnectionTokens(userId, connectionId, { ...next, expectedAccessTokenCiphertext }, scheduled)) throw new Error("Connection no longer active.");
+        const stored = await getGoogleConnectionTokens(userId, connectionId, scheduled);
         if (!stored || stored.accessToken !== next.accessToken) throw new Error("Credentials changed concurrently.");
         expectedAccessTokenCiphertext = stored.accessTokenCiphertext;
         accessToken = next.accessToken;
