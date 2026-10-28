@@ -21,7 +21,7 @@ function processingLabel(item: LibraryItem) {
 
 export function LibraryList({ items, toolbar, filtered = false }: { items: LibraryItem[]; toolbar?: ReactNode; filtered?: boolean }) {
   return <div>
-    <form action="/search" method="get" role="search" className="mb-5 flex min-h-14 items-center gap-3 rounded-2xl border border-blue-100 bg-white/95 px-4 shadow-sm shadow-blue-100/20">
+    <form action="/library" method="get" role="search" className="mb-5 flex min-h-14 items-center gap-3 rounded-2xl border border-blue-100 bg-white/95 px-4 shadow-sm shadow-blue-100/20">
       <Search className="size-5 shrink-0 text-slate-400" aria-hidden="true"/>
       <input name="q" type="search" required maxLength={500} aria-label="자료함 검색어" placeholder="자료함에서 검색하세요..." className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-slate-400"/>
       <button type="submit" aria-label="자료 검색" className="grid size-9 shrink-0 place-items-center rounded-lg bg-blue-600 text-white hover:bg-blue-700"><Search className="size-4"/></button>

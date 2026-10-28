@@ -88,7 +88,7 @@ test("Library keeps search and source tabs with collapsed existing classificatio
   const toolbar = React.createElement(LibraryToolbar, { query: parseItemQuery(new URLSearchParams()) });
   const html = render(LibraryList, { items: [], toolbar });
   assert.ok(html.indexOf("자료함 검색어") < html.indexOf("자료 출처 필터"));
-  assert.match(html, /action="\/search"/);
+  assert.match(html, /action="\/library"/);
   assert.match(html, /직접입력/);
   assert.match(html, /<details>/);
   for (const name of ["topic", "documentType"]) assert.match(html, new RegExp(`name="${name}"`));

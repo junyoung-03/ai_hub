@@ -8,6 +8,22 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 const load=uiLoader();
 
+test('library search renders the existing search workspace in library context',async()=>{
+ let observed;
+ const ui=uiLoader({
+  '@/lib/supabase/auth':{requirePageUser:async()=>({id:'test-user'})},
+  '@/components/shell/app-shell':{AppShell:({children})=>React.createElement('main',null,children)},
+  '@/components/shell/page-heading':{PageHeading:({title})=>React.createElement('h1',null,title)},
+  '@/components/workspace/request-clock':{getWorkspaceClock:async()=>123},
+  '@/components/search/search-workspace':{SearchWorkspace:props=>{observed=props;return React.createElement('div',null,'Search results');}},
+ });
+ const {default:LibraryPage}=ui('src/app/library/page.tsx');
+ const element=await LibraryPage({searchParams:Promise.resolve({q:'  synthetic query  '})});
+ const html=renderToStaticMarkup(element);
+ assert.match(html,/자료함 검색/);assert.match(html,/Search results/);
+ assert.equal(observed.initialQuery,'synthetic query');assert.equal(observed.backHref,'/library');
+});
+
 test('library renders effective user classification and distinguishes unanalysed items',()=>{
  const {effectiveClassification}=load('src/lib/items/presentation.ts');
  const {LibraryList}=load('src/components/library/library-list.tsx');
