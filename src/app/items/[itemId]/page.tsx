@@ -17,6 +17,16 @@ import { createClient } from "@/lib/supabase/server";
 import { analysisJobRpc } from "@/lib/items/analysis-job-rpc";
 import { processingErrorMessage } from "@/lib/items/processing";
 
+function actionDeadlineText(action: ItemDetail["actions"][number]) {
+  if (action.deadlineStatus === "needs_review") return "마감일 확인 필요";
+  if (action.deadlineStatus !== "confirmed") return "마감일 미정";
+  if (action.deadlineAt) return `${formatTimestamp(action.deadlineAt)}까지`;
+  if (!action.deadlineDate) return "마감일 확인 필요";
+  const date = new Date(`${action.deadlineDate}T00:00:00+09:00`);
+  if (!Number.isFinite(date.getTime())) return "마감일 확인 필요";
+  return `${new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(date)}까지`;
+}
+
 export default async function ItemPage({ params }: { params: Promise<{ itemId: string }> }) {
   await requirePageUser();
   const { itemId } = await params;
@@ -41,9 +51,8 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
     {item.contentText?.trim() ? <div className="mt-6 whitespace-pre-wrap break-words text-base leading-8 [overflow-wrap:anywhere]">{item.contentText}</div> : <p role="status" className="text-muted-foreground">{data.processing.message}</p>}
   </section>;
 
-  const insightPane = <aside className="min-w-0 space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5" aria-labelledby="analysis-title">
+  const insightPane = <aside className="min-w-0 space-y-6 rounded-xl border border-line bg-surface p-4 sm:p-6" aria-label="AI 분석 결과">
     {item.source === "gmail" && await promotionalReady() && <NoiseControls itemId={item.id}/>}
-    <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="analysis-title">분석과 할 일</h2>{data.aiAnalysis && item.processingStatus === "completed" && <span className="text-xs text-green">분석 완료</span>}</div>
     {item.processingStatus === "completed" && !data.aiAnalysis && <p role="status" className="text-sm text-muted-foreground">검증된 AI 분석 결과가 아직 없습니다.</p>}
     {item.processingStatus !== "completed" && <div role={item.processingStatus === "failed" && !data.processing.canPoll ? "alert" : "status"} className="text-sm text-muted-foreground"><p>{data.processing.message}</p></div>}
     {item.processingStatus === "failed" && <details className="text-sm"><summary className="cursor-pointer">분석 진단 기록</summary>
@@ -54,25 +63,25 @@ export default async function ItemPage({ params }: { params: Promise<{ itemId: s
         return <li key={index}>{time && <time dateTime={time}>{formatTimestamp(time)}</time>}{" · "}{typeof row.state === "string" ? row.state : "unknown"}{typeof row.attempt === "number" ? ` · ${row.attempt}회차` : ""}{code && <><br/><code>{code}</code><p>{processingErrorMessage(code) ?? "작업 상태를 확인해 주세요."}</p></>}</li>;
       })}</ul>}
     </details>}
-    <section className="space-y-3" aria-labelledby="actions-title"><h3 id="actions-title" className="text-sm text-muted-foreground">해야 할 일 <span className="font-normal">{actions.length}개</span></h3>
+    <section className="space-y-4" aria-labelledby="actions-title"><div className="flex flex-wrap items-center justify-between gap-2"><h2 id="actions-title" className="text-base font-semibold">할 일 <span className="ml-1 text-sm font-normal text-muted-foreground">{actions.length}개</span></h2>{data.aiAnalysis && item.processingStatus === "completed" && <span className="text-xs text-muted-foreground">분석 완료</span>}</div>
       {!actions.length && <p className="text-muted-foreground">원문에서 확인된 할 일이 없습니다.</p>}
-      {actions.map(action => <article key={action.id} className="space-y-3 rounded-lg border border-line p-3">
-        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="meta">{{ required: "해야 할 일", optional: "신청·선택", check: "조건 확인" }[action.type]}</p><h4 className="mt-1 break-words text-base font-medium">{action.title}</h4></div><span className={`shrink-0 rounded-md px-2 py-1 text-xs ${action.status === "completed" ? "bg-muted text-green" : "bg-brand-soft text-ink"}`}>{deadlineLabel(action)}</span></div>
-        <p className="text-sm">{action.deadlineStatus === "confirmed" ? `마감 · ${action.deadlineAt ? formatTimestamp(action.deadlineAt) : action.deadlineDate}` : action.deadlineStatus === "needs_review" ? "원문에서 날짜를 다시 확인해 주세요." : "확정된 날짜 근거가 없습니다."}</p>
+      {actions.map(action => <article key={action.id} className="space-y-4 rounded-xl border border-line p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1">{action.type !== "required" && <p className="mb-1 text-sm text-muted-foreground">{action.type === "optional" ? "신청·선택" : "조건 확인"}</p>}<h3 className="break-words text-lg font-semibold leading-7 sm:text-xl">{action.title}</h3></div><span className={`shrink-0 rounded-md px-2.5 py-1 text-sm font-medium ${action.status === "completed" ? "bg-green-soft text-green" : "bg-brand-soft text-ink"}`}>{action.status === "completed" ? "완료" : "진행 중"}</span></div>
+        <div className="space-y-1 rounded-lg bg-muted px-4 py-3"><p className="text-sm text-muted-foreground">마감일</p><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><p className={`break-words text-2xl font-semibold leading-snug sm:text-3xl ${action.deadlineStatus === "confirmed" ? "text-ink" : "text-amber"}`}>{actionDeadlineText(action)}</p>{action.status !== "completed" && action.deadlineStatus === "confirmed" && <span className="text-base font-medium text-primary">{deadlineLabel(action)}</span>}</div></div>
         {(action.startDate || action.startAt) && <p className="text-sm">신청 시작 · {action.startAt ? formatTimestamp(action.startAt) : action.startDate}</p>}
-        {action.requirements.length > 0 && <ul aria-label="필요한 것" className="space-y-1 text-sm leading-6 text-muted-foreground">{action.requirements.map((value, i) => <li key={i}>{value}</li>)}</ul>}
-        {action.conditions.length > 0 && <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">적용 조건 보기 · {action.conditions.length}개</summary><ul className="mt-2 list-inside list-disc space-y-1">{action.conditions.map((value, i) => <li key={i}>{value}</li>)}</ul></details>}
+        {action.requirements.length > 0 && <ul aria-label="필요한 것" className="space-y-1 text-base leading-7 text-ink">{action.requirements.map((value, i) => <li key={i}>{value}</li>)}</ul>}
         <details className="text-sm"><summary className="cursor-pointer text-primary">원문 근거 보기</summary><div className="mt-3 space-y-3">
           {evidence.filter(source => source.actionId === action.id).map(source => <div key={source.id} className="space-y-2"><p className="meta">{source.isCurrent ? "현재 근거" : "과거 근거"}{source.id === action.deadlineSourceId ? " · 마감일 근거" : ""}</p><blockquote className="whitespace-pre-wrap border-l border-line pl-3 leading-6">{source.text}</blockquote>
             {source.locator.evidence?.filter((value,index,quotes) => value.text !== source.text && quotes.findIndex(quote => quote.text === value.text) === index).map((value, i) => <blockquote key={i} className="whitespace-pre-wrap border-l border-line pl-3 leading-6">{value.text}</blockquote>)}
             {source.itemId === item.id ? <p className="meta">이 자료의 원문 근거입니다.</p> : <Link className="text-primary underline" href={`/items/${source.itemId}`}>연결된 자료 보기 →</Link>}
           </div>)}
+          {action.conditions.length > 0 && <div className="space-y-2 border-t border-line pt-3"><h4 className="font-medium">원문에 기록된 조건</h4><ul className="list-inside list-disc space-y-1">{action.conditions.map((value,i) => <li key={i}>{value}</li>)}</ul></div>}
         </div></details>
         <ActionStateButton actionId={action.id} status={action.status} />
       </article>)}
     </section>
-    {data.eventObservations.length > 0 && <section className="space-y-2 border-t border-line pt-3"><h3 className="text-sm">관련 일정 <span className="font-normal text-muted-foreground">· 마감일과 별개</span></h3>{data.eventObservations.map((event, i) => <details key={i} className="text-sm"><summary className="cursor-pointer">{event.status === "confirmed" ? event.datetime ? formatTimestamp(event.datetime) : event.date : "일정 날짜 확인 필요"}<span className="ml-2 text-muted-foreground">일정 원문 보기</span></summary><blockquote className="mt-2 whitespace-pre-wrap border-l border-line pl-3 leading-6">{event.evidence.text}</blockquote></details>)}</section>}
-    <section className="space-y-2 border-t border-line pt-3"><h3 className="text-sm">분류</h3><ClassificationSummary value={classification} compact /><ClassificationEditor itemId={item.id} value={classification} /></section>
+    {data.eventObservations.length > 0 && <section className="space-y-3 border-t border-line pt-5"><h2 className="text-base font-semibold">관련 일정 <span className="ml-1 text-sm font-normal text-muted-foreground">마감일과 별개</span></h2>{data.eventObservations.map((event, i) => <div key={i} className="space-y-1.5"><p className="text-lg font-semibold">{event.status === "confirmed" ? event.datetime ? formatTimestamp(event.datetime) : event.date : "일정 날짜 확인 필요"}</p><blockquote className="whitespace-pre-wrap break-words text-base leading-7 text-muted-foreground">{event.evidence.text}</blockquote></div>)}</section>}
+    <section className="space-y-4 border-t border-line pt-5"><h2 className="text-base font-semibold">자료 분류</h2><ClassificationSummary value={classification} compact /><ClassificationEditor itemId={item.id} value={classification} /></section>
     <details className="border-t border-line pt-3 text-sm"><summary className="cursor-pointer text-muted-foreground">비슷한 자료 보기</summary><SimilarItems itemId={item.id} /></details>
     {data.aiAnalysis && item.processingStatus === "indexing" && <SearchIndexControl itemId={item.id}/>}
     <details className="border-t border-line pt-3 text-sm" open={item.processingStatus === "failed" || !data.aiAnalysis}><summary className="cursor-pointer text-muted-foreground">처리 내역 · 분석 관리</summary><div className="mt-3 space-y-3">

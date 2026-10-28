@@ -18,9 +18,13 @@ export function ProcessingStatus({ status, summary }: { status: ItemList["items"
 export function ClassificationSummary({ value, detailed = false, compact = false }: { value: ItemDetail["classification"]; detailed?: boolean; compact?: boolean }) {
   if (!value.available) return <p className="text-sm text-muted-foreground">아직 분류 결과가 없습니다.</p>;
   const origin = (value: string) => value === "user" ? "직접 수정" : "AI 자동분류";
-  if (compact) return <div className="space-y-1.5 text-sm">
-    <p className="break-words"><span className="sr-only">주제: </span>{value.primaryTopic ?? "미분류"}<span className="mx-2 text-faint">·</span><span className="sr-only">자료 성격: </span>{value.documentType ? documentLabels[value.documentType] : "미분류"}<span className="ml-2 text-xs text-muted-foreground">{origin(value.origin)}</span></p>
-    {value.tags.length > 0 && <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground" aria-label="태그">{value.tags.map((tag,index) => <span className="break-words" key={`${index}:${tag}`}>#{tag}</span>)}</div>}
+  if (compact) return <div className="space-y-3">
+    <dl className="grid grid-cols-[3rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-3">
+      <dt className="text-sm text-muted-foreground">주제</dt><dd className="break-words text-lg font-semibold text-ink">{value.primaryTopic ?? "미분류"}</dd>
+      <dt className="text-sm text-muted-foreground">유형</dt><dd className="break-words text-lg font-semibold text-ink">{value.documentType ? documentLabels[value.documentType] : "미분류"}</dd>
+      {value.tags.length > 0 && <><dt className="text-sm text-muted-foreground">태그</dt><dd className="flex min-w-0 flex-wrap gap-2" aria-label="태그">{value.tags.map((tag,index) => <span className="max-w-full break-words rounded-lg border border-line bg-brand-soft px-3 py-1.5 text-sm font-medium text-ink" key={`${index}:${tag}`}>{tag}</span>)}</dd></>}
+    </dl>
+    <p className="text-xs text-muted-foreground">{origin(value.origin)}</p>
   </div>;
   return (
     <div className="space-y-2 text-sm">
