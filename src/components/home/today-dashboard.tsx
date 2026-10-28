@@ -44,11 +44,11 @@ export function TodayDashboard({
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
-    router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+    router.push(`/library?q=${encodeURIComponent(query.trim())}`);
   };
 
   const handleChipClick = (chip: string) => {
-    router.push(`/search?q=${encodeURIComponent(chip)}`);
+    router.push(`/library?q=${encodeURIComponent(chip)}`);
   };
 
   const openAddModal = (date?: string) => {
