@@ -8,6 +8,7 @@ import type { SearchPageResponse } from "@/types/search-ui";
 import { formatLabels } from "@/lib/items/presentation";
 import { SearchDemoResults } from "./search-demo-results";
 import { SourceBadge, WorkspaceSkeleton, workspaceSources } from "@/components/workspace/workspace-ui";
+import { GroundedAnswer } from "./grounded-answer";
 
 export function SearchWorkspace({ initialQuery = "", actions = false, today = false, initialNow = 0, promotionalEnabled = false, backHref = "/" }: { initialQuery?: string; actions?: boolean; today?: boolean; initialNow?: number; promotionalEnabled?: boolean; backHref?: "/" | "/library" }) {
   const router = useRouter();
@@ -70,6 +71,7 @@ export function SearchWorkspace({ initialQuery = "", actions = false, today = fa
       <details className="rounded-xl border bg-surface p-3"><summary className="cursor-pointer text-sm">원본 날짜{from || to ? ` · ${from || "전체"} ~ ${to || "전체"}` : " · 모든 기간"}</summary><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="text-sm">원본 날짜 시작<input type="date" className="field mt-1" value={from} onChange={e=>setFrom(e.target.value)} /></label><label className="text-sm">원본 날짜 종료<input type="date" className="field mt-1" value={to} onChange={e=>setTo(e.target.value)} /></label></div></details>
     </div><div className="mt-4"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={semantic} onChange={e=>setSemantic(e.target.checked)} />의미 기반 검색 함께 사용</label><p className="meta mt-1">사용하면 검색어가 Gemini로 전송될 수 있습니다. 민감한 내용은 입력하지 마세요.</p></div></details>}
     {actions && !today && <div className="flex flex-wrap gap-2 border-b pb-5" role="group" aria-label="진행 중인 할 일 필터">{[["all","전체"],["required","해야 할 일"],["optional","신청·선택"],["review","확인 필요"],["completed","완료"]].map(([v,l])=><button key={v} className={`min-h-9 rounded-full px-3.5 py-1.5 text-sm ${tab===v ? "bg-ink text-white" : "text-muted-foreground hover:bg-brand-soft"}`} aria-pressed={tab===v} onClick={()=>setTab(v)}>{l}</button>)}</div>}
+    {!actions && page && !busy && !error && <GroundedAnswer key={JSON.stringify([query,source,format,from,to,semantic,includePromotional])} query={query} filters={{ source: source ? [source] : [], format: format ? [format] : [], from: from || null, to: to || null, ...(promotionalEnabled ? { includePromotional } : {}) }} semantic={semantic}/>}
     <div aria-live="polite" className="space-y-4">
       {busy && <WorkspaceSkeleton rows={3}/>}
       {error && <div role="alert" className="panel space-y-3"><p className="text-destructive">{error}</p><button className="btn-secondary" disabled={busy || retryAt > 0} onClick={()=>void run(failedCursor.current)}>다시 시도</button>{error.includes("로그인") && <Link className="ml-3 text-sm underline" href="/login">로그인</Link>}</div>}
