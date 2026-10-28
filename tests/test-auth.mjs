@@ -153,7 +153,7 @@ function button(path, name, auth, navigation = {}, googleEnabled = true, states 
   return component[name]().props.children[0].props;
 }
 
-test("login requests only identity scopes and the local callback", async () => {
+test("login requests account selection, identity scopes and the local callback", async () => {
   let options;
   const props = button("src/components/auth/google-sign-in-button.tsx", "GoogleSignInButton", {
     async signInWithOAuth(input) { options = input; return { data: { url: "https://example.invalid" }, error: null }; },
@@ -162,6 +162,7 @@ test("login requests only identity scopes and the local callback", async () => {
   assert.equal(options.provider, "google");
   assert.equal(options.options.scopes, "openid email profile");
   assert.equal(options.options.redirectTo, "http://localhost:3000/auth/callback");
+  assert.equal(options.options.queryParams.prompt, "select_account");
 });
 
 test("logout redirects and refreshes only after local signOut succeeds", async () => {
