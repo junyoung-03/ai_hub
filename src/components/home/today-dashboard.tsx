@@ -135,6 +135,7 @@ export function TodayDashboard({
             scheduleBusy={schedule.busy}
             error={actions.error}
             scheduleError={schedule.error}
+            onRetry={() => { actions.reload(); schedule.reload(); }}
           />
         </div>
       </div>

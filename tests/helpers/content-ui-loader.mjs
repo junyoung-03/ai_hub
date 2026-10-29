@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 const require = createRequire(import.meta.url);
-export function uiLoader(injections = {}) {
+export function uiLoader(injections = {}, globals = {}) {
   const cache = new Map();
   function load(file) {
     file = resolve(file);
@@ -13,7 +13,7 @@ export function uiLoader(injections = {}) {
     const exports = {};
     cache.set(file, exports);
     const code = ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
-    runInNewContext(code, { exports, URL, URLSearchParams, Buffer, Date, Intl, Response, Request, Headers, structuredClone, process, require(name) {
+    runInNewContext(code, { exports, URL, URLSearchParams, Buffer, Date, Intl, Response, Request, Headers, structuredClone, process, ...globals, require(name) {
       if (name in injections) return injections[name];
       if (name === "@/lib/items/promotional-gate") return { promotionalReady: async () => false, missingPromotionalContract: error => ["42P01","42703","42883","PGRST202","PGRST204","PGRST205"].includes(error?.code) };
       if (name === "server-only") return {};

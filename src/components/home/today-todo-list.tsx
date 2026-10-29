@@ -13,7 +13,7 @@ function clock(value?: string | null) {
   }).format(new Date(value));
 }
 
-export function TodayTodoList({ today, actions, events, eventEnds, busy, scheduleBusy = busy, error, scheduleError }: {
+export function TodayTodoList({ today, actions, events, eventEnds, busy, scheduleBusy = busy, error, scheduleError, onRetry }: {
   today: string;
   actions: SearchActionResult[];
   events: ScheduleEvent[];
@@ -22,6 +22,7 @@ export function TodayTodoList({ today, actions, events, eventEnds, busy, schedul
   scheduleBusy?: boolean;
   error: string;
   scheduleError: string;
+  onRetry?: () => void;
 }) {
   const todayActions = actions.filter(action => actionDay(action) === today && action.status === "open");
   const upcoming = upcomingEntries(today, busy || error ? [] : actions, scheduleBusy || scheduleError ? [] : events);
@@ -55,6 +56,7 @@ export function TodayTodoList({ today, actions, events, eventEnds, busy, schedul
         {scheduleError && <p role="alert" className="py-3 text-sm text-red-600">{scheduleError}</p>}
         {error && <p role="alert" className="py-3 text-sm text-red-600">{error}</p>}
         {(busy || scheduleBusy) && <p role="status" className="py-5 text-sm text-slate-500">일정을 불러오는 중…</p>}
+        {(error || scheduleError) && onRetry && <button type="button" onClick={onRetry} disabled={busy || scheduleBusy} className="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-50">일정 다시 불러오기</button>}
         {(
           <ul className="divide-y divide-blue-50">
             {upcoming.map(event => (

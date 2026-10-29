@@ -99,7 +99,8 @@ test("Library keeps search and source tabs with collapsed existing classificatio
   assert.match(filtered, /처리 상태: 실패/);
   assert.match(filtered, /<option value="failed" selected="">실패<\/option>/);
   assert.match(filtered, /name="topic"/);
-  assert.match(filtered, /<details open="">/);
+  assert.match(filtered, /<details>/);
+  assert.doesNotMatch(filtered, /<details open/);
   assert.match(filtered, /href="\/library\?source=calendar&amp;limit=10"/);
 });
 

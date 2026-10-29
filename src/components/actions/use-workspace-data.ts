@@ -3,13 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { ItemList } from "@/lib/items/queries";
 import type { ItemDetailResponse } from "@/types/items";
 import type { SearchActionResult } from "@/types/search-ui";
+import { readWorkspaceJson as readJson } from "./workspace-request";
 
 export type LibraryItem = ItemList["items"][number];
-async function readJson<T>(url: string, signal: AbortSignal): Promise<T> {
-  const response = await fetch(url, {cache:"no-store",signal});
-  if (!response.ok) throw new Error(response.status === 401 ? "로그인이 만료되었습니다. 다시 로그인해 주세요." : "자료를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-  return response.json() as Promise<T>;
-}
 export function useActions(status: "open" | "completed" = "open") {
   const [rows, setRows] = useState<SearchActionResult[]>([]);
   const [busy, setBusy] = useState(true), [error, setError] = useState("");
@@ -52,7 +48,10 @@ export function useItemDetails(items: LibraryItem[]) {
   useEffect(() => {
     const controller = new AbortController();
     async function run() {
-      setBusy(items.length > 0); setError(""); setDetails({});
+      setBusy(items.length > 0); setError("");
+      // Keep successfully loaded entries visible during an explicit retry.
+      const currentIds = new Set(items.map(item => item.id));
+      setDetails(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => currentIds.has(id))));
       let index = 0, failed = false;
       await Promise.all(Array.from({length:Math.min(3,items.length)}, async () => {
         while (index < items.length && !controller.signal.aborted) {

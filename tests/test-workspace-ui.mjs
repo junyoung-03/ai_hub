@@ -8,6 +8,79 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 const load=uiLoader();
 
+function workspaceReader(fetcher, timers = {}) {
+ const exports={};
+ const code=ts.transpileModule(readFileSync(new URL('../src/components/actions/workspace-request.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+ runInNewContext(code,{exports,fetch:fetcher,AbortController,TypeError,setTimeout,clearTimeout,...timers});
+ return exports.readWorkspaceJson;
+}
+
+test('workspace reads recover from a transient failure but do not repeat auth or missing-item failures',async()=>{
+ for(const initial of [new TypeError('synthetic network error'),{ok:false,status:500},{ok:false,status:503}]) {
+  let calls=0;
+  const read=workspaceReader(async()=>{if(calls++===0){if(initial instanceof Error)throw initial;return initial;}return {ok:true,json:async()=>({loaded:true})};});
+  assert.deepEqual(await read('/api/v1/items/synthetic',new AbortController().signal),{loaded:true});
+  assert.equal(calls,2);
+ }
+ for(const status of [401,403,404]) {
+  let calls=0;
+  const read=workspaceReader(async()=>{calls++;return {ok:false,status};});
+  await assert.rejects(read('/api/v1/items/synthetic',new AbortController().signal));
+  assert.equal(calls,1);
+ }
+});
+
+test('workspace read retries are bounded and cancelled reads do not retry',async()=>{
+ let calls=0;
+ const read=workspaceReader(async()=>{calls++;return {ok:false,status:502};});
+ await assert.rejects(read('/api/v1/items/synthetic',new AbortController().signal));
+ assert.equal(calls,2);
+ const controller=new AbortController();
+ const cancelled=workspaceReader(async(_url,{signal})=>new Promise((_resolve,reject)=>{signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')));controller.abort();}));
+ await assert.rejects(cancelled('/api/v1/items/synthetic',controller.signal),{name:'AbortError'});
+ const before=calls;
+ await assert.rejects(read('/api/v1/items/synthetic',controller.signal),{name:'AbortError'});
+ assert.equal(calls,before);
+});
+
+test('a timed-out workspace read can recover without leaving an unbounded pending request',async()=>{
+ let calls=0;
+ const read=workspaceReader(async(_url,{signal})=>{
+  if(calls++===0)return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError'))));
+  return {ok:true,json:async()=>({loaded:true})};
+ },{setTimeout:(callback)=>setTimeout(callback,1)});
+ assert.deepEqual(await read('/api/v1/items/synthetic',new AbortController().signal),{loaded:true});
+ assert.equal(calls,2);
+});
+
+test('retrying partial detail reads retains successful entries and clears the old error after recovery',async()=>{
+ const state=[];let stateIndex=0,effect,fail=true;
+ const hooks=uiLoader({
+  react:{useState:initial=>{const i=stateIndex++;if(!(i in state))state[i]=initial;return [state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value;}];},useCallback:fn=>fn,useEffect:fn=>{effect=fn;}},
+  './workspace-request':{readWorkspaceJson:async url=>{if(fail&&url.endsWith('/bad'))throw new Error('synthetic unavailable');return {item:{id:url.split('/').at(-1)}};}},
+ }, {AbortController});
+ const {useItemDetails}=hooks('src/components/actions/use-workspace-data.ts');
+ const items=[{id:'good'},{id:'bad'}];
+ const useRenderSnapshot=()=>{stateIndex=0;return useItemDetails(items);};
+ useRenderSnapshot();let cleanup=effect();await new Promise(setImmediate);
+ let result=useRenderSnapshot();
+ assert.equal(result.details.good.item.id,'good');assert.ok(result.error);assert.equal(result.busy,false);
+ fail=false;result.reload();cleanup();useRenderSnapshot();cleanup=effect();
+ assert.equal(state[0].good.item.id,'good');
+ await new Promise(setImmediate);result=useRenderSnapshot();
+ assert.equal(result.error,'');assert.equal(result.busy,false);assert.equal(Object.keys(result.details).length,2);
+ cleanup();
+});
+
+test('home offers an explicit reload button while preserving the partial-read warning',()=>{
+ const {TodayTodoList}=load('src/components/home/today-todo-list.tsx');
+ const props={today:'2026-10-29',actions:[],events:[],eventEnds:{},busy:false,scheduleBusy:false,error:'',scheduleError:'일부 자료 조회 실패',onRetry(){}};
+ const html=renderToStaticMarkup(React.createElement(TodayTodoList,props));
+ assert.match(html,/일부 자료 조회 실패/);assert.match(html,/일정 다시 불러오기/);
+ const recovered=renderToStaticMarkup(React.createElement(TodayTodoList,{...props,scheduleError:''}));
+ assert.doesNotMatch(recovered,/일부 자료 조회 실패|일정 다시 불러오기/);
+});
+
 test('today search and suggested searches open library results',()=>{
  const routes=[];
  let stateIndex=0;
