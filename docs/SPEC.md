@@ -1468,6 +1468,7 @@ Polished UI 2.0의 레이아웃·색상·서체·Navigation은 유지하며 기�
 - Calendar cell은 제목과 작은 dot만 표시하며 시간은 숨긴다. 오늘은 파란 원, 선택 날짜는 연한 blue border/background로 표시한다.
 - 오늘 할 일은 오늘 확정 날짜의 미완료 Action만 표시한다. checkbox·상태 탭·우측 추가 버튼을 제거하고 제목·dot·근거 있는 시간을 표시한다. 상태 관리는 /actions에서 한다.
 - 홈·플래너의 읽기 요청은 네트워크 오류·일시적인 서버 오류에 한해 짧은 간격으로 최대 한 번 재시도한다. 인증 오류와 없는 자료는 자동 반복하지 않는다. 홈 조회 실패 시 ‘일정 다시 불러오기’를 제공하며, 재조회 중 성공했던 자료의 달력 표시는 유지한다. 재조회가 성공하면 이전 오류를 해제하고, 계속 실패하면 오류를 표시한다.
+- 홈·플래너의 일정 목록은 `GET /api/v1/items/schedule`에서 사용자 소유 자료의 일정용 필드를 최대 100건씩 일괄 조회한다. 기존 cursor/limit 페이지 계약을 재사용하고 Google 일정·검증된 저장 AI 일정·날짜 확인 필요 상태를 유지한다. 원문·원본 metadata는 일정 응답에 포함하지 않으며 필요한 Calendar 발췌만 최대 220자 제공한다. 자료별 전체 상세·분류·Action Source 조회를 반복하지 않는다. 광고 여부와 관계없이 일정 조회를 유지하고, AI 재호출이나 DB 변경을 하지 않는다.
 - 다가오는 일정은 미래 Event와 미완료 확정 날짜 Action을 함께 날짜·시간순 최대 5개 표시한다(2026-10-13 사용자 요청으로 직접 추가 할 일 누락 수정). 오늘 Action은 오늘 할 일에서 표시한다. 기존 Action/Event ID와 저장 구조를 유지하며 완료·삭제한 Action은 제외한다. Event는 실제 시작·종료 시각, Action은 입력된 시각을 표시한다. 종료 시각이 없으면 시작만, Google 종일 일정은 종일, 시각이 없는 항목은 시간 미정으로 표시한다. 시간을 추측하지 않는다. Action/Event 조회가 따로 완료돼도 먼저 받은 목록은 표시한다.
 - Calendar Header의 단일 추가 버튼은 월·일·시간·제목 네 필드의 Quick Todo를 연다. 기존 직접 Action POST를 사용하고 Upload/Manual Text/Gemini/Event를 호출하지 않는다. 동일 actionId를 Calendar와 오늘 할 일에서 공유한다.
 - Quick Todo는 body portal의 viewport 전체 rgba(15,23,42,.18)/5px blur overlay와 400px white memo다. 큰 회색 배경 panel은 두지 않는다.

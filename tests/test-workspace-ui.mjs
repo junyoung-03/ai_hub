@@ -81,6 +81,20 @@ test('home offers an explicit reload button while preserving the partial-read wa
  assert.doesNotMatch(recovered,/일부 자료 조회 실패|일정 다시 불러오기/);
 });
 
+test('schedule loading finishes after a single batch response without per-item detail requests',async()=>{
+ const state=[],effects=[];let index=0;const requests=[];
+ const ui=uiLoader({
+  react:{useState:initial=>{const i=index++;if(!(i in state))state[i]=initial;return [state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value;}];},useCallback:fn=>fn,useEffect:fn=>effects.push(fn)},
+  './workspace-request':{readWorkspaceJson:async url=>{requests.push(url);return {items:[{item:{id:'synthetic',title:'Synthetic event',source:'manual',contentText:null},calendar:null,eventObservations:[]}],nextCursor:null};}},
+ },{AbortController,window:{addEventListener(){},removeEventListener(){}}});
+ const {useScheduleItems}=ui('src/components/actions/use-workspace-data.ts');
+ useScheduleItems();const cleanup=effects.map(effect=>effect());await new Promise(setImmediate);
+ index=0;const result=useScheduleItems();
+ assert.equal(result.busy,false);assert.equal(result.error,'');assert.equal(result.items.length,1);assert.equal(Object.keys(result.details).length,1);
+ assert.deepEqual(requests,['/api/v1/items/schedule?limit=100']);
+ cleanup.forEach(dispose=>dispose?.());
+});
+
 test('today search and suggested searches open library results',()=>{
  const routes=[];
  let stateIndex=0;

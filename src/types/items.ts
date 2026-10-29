@@ -97,3 +97,11 @@ export type ItemDetailResponse = {
   processing: import("@/lib/items/processing").ProcessingSummary;
   original: { url: string | null; previewType: "google" | "upload" | "text" };
 };
+
+/** Calendar projection: no classifications, Action histories or raw analysis metadata. */
+export type ItemScheduleDetail = {
+  item: Pick<Item, "id" | "title" | "source" | "contentText">;
+  calendar: ItemDetailResponse["calendar"];
+  eventObservations: EventObservation[];
+};
+export type ItemSchedulePage = { items: ItemScheduleDetail[]; nextCursor: string | null };

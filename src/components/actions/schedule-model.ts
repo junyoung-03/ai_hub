@@ -1,4 +1,4 @@
-import type { ItemDetailResponse } from "@/types/items";
+import type { ItemScheduleDetail } from "@/types/items";
 import type { SearchActionResult } from "@/types/search-ui";
 
 export type ScheduleEvent = {
@@ -11,7 +11,7 @@ export type UnresolvedScheduleEvent = {
 };
 
 /** Undated observations remain visible without assigning a calendar day. */
-export function unresolvedEventsFromDetail(detail: ItemDetailResponse): UnresolvedScheduleEvent[] {
+export function unresolvedEventsFromDetail(detail: ItemScheduleDetail): UnresolvedScheduleEvent[] {
   return detail.eventObservations.flatMap((event, index) => event.status === "needs_review" ? [{
     id: `observation:${detail.item.id}:${index}`, itemId: detail.item.id, title: detail.item.title,
     source: detail.item.source, rawText: event.rawText, evidence: event.evidence.text,
@@ -57,7 +57,7 @@ export function eventGroup(event: ScheduleEvent, today: string) {
 export function eventOnDay(event: ScheduleEvent, date: string) {
   return event.date <= date && date <= event.lastDate;
 }
-export function eventsFromDetail(detail: ItemDetailResponse): ScheduleEvent[] {
+export function eventsFromDetail(detail: ItemScheduleDetail): ScheduleEvent[] {
   const { item, calendar, eventObservations } = detail;
   const events: ScheduleEvent[] = [];
   if (calendar?.start && calendar.status !== "cancelled") {

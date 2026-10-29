@@ -104,6 +104,51 @@ test("Library keeps search and source tabs with collapsed existing classificatio
   assert.match(filtered, /href="\/library\?source=calendar&amp;limit=10"/);
 });
 
+test('calendar batch reads use one owner-scoped query and retain validated dates without exposing raw metadata', async () => {
+  const fixture = cases[0];
+  const rows = [{id:'10000000-0000-4000-8000-000000000001',title:'Synthetic event',...reference,content_text:fixture.text,
+    metadata:{private_extra:'must-not-leak',aiAnalysis:{schemaVersion:'0.2',analyzedAt:'2026-10-12T01:00:00Z',result:fixture.output}}},
+    {id:'10000000-0000-4000-8000-000000000002',title:'Malformed artifact',...reference,content_text:'Synthetic body',metadata:{aiAnalysis:{schemaVersion:'0.2',analyzedAt:'2026-10-12T01:00:00Z',result:{}}}}];
+  let calls=0,ownerChecked=false,failed=false;
+  const client={from(table){calls++;assert.equal(table,'items');const q={
+    select(columns){assert.doesNotMatch(columns,/classifications|action_sources/);return q;},
+    eq(key,value){assert.equal(key,'user_id');assert.equal(value,'fixture-owner');ownerChecked=true;return q;},
+    or(){return q;},order(){return q;},limit(){return q;},
+    then(resolve){return Promise.resolve({data:failed?null:rows,error:failed?{code:'synthetic'}:null}).then(resolve);}
+  };return q;}};
+  const ui=uiLoader({'@/lib/supabase/auth':{requireUser:async()=>({id:'fixture-owner'})},'@/lib/supabase/server':{createClient:async()=>client}});
+  const {getScheduleItems}=ui('src/lib/items/queries.ts');
+  const {parseItemQuery}=ui('src/lib/items/filters.ts');
+  const page=await getScheduleItems(parseItemQuery(new URLSearchParams('limit=100')));
+  assert.equal(calls,1);assert.equal(ownerChecked,true);assert.equal(page.items.length,2);
+  assert.equal(page.items[0].eventObservations[0].date,'2026-10-24');
+  assert.equal(page.items[0].item.contentText,null);assert.equal(page.items[1].eventObservations.length,0);
+  assert.doesNotMatch(JSON.stringify(page),/must-not-leak|private_extra|aiAnalysis|classifications|action_sources/);
+  const next=await getScheduleItems(parseItemQuery(new URLSearchParams('limit=1')));
+  assert.equal(next.items.length,1);assert.ok(next.nextCursor);
+  assert.equal(parseItemQuery(new URLSearchParams({limit:'1',cursor:next.nextCursor})).position.id,rows[0].id);
+  failed=true;await assert.rejects(getScheduleItems(parseItemQuery(new URLSearchParams())));
+  const denied=uiLoader({'@/lib/supabase/auth':{requireUser:async()=>{throw new Error('unauthorized');}},'@/lib/supabase/server':{createClient:async()=>{assert.fail('unauthorized must not reach database');}}});
+  await assert.rejects(denied('src/lib/items/queries.ts').getScheduleItems(parseItemQuery(new URLSearchParams())));
+});
+
+test('calendar batch endpoint accepts only bounded pagination and enforces authentication',async()=>{
+  let reads=0,authenticated=true;
+  const ui=uiLoader({
+    '@/lib/supabase/auth':{requireUser:async()=>{if(!authenticated)throw new Error('unauthorized');}},
+    '@/lib/items/queries':{getScheduleItems:async()=>{reads++;return {items:[],nextCursor:null};}},
+    '@/lib/items/http':{itemResponse:body=>Response.json(body),itemErrorResponse:()=>Response.json({error:true},{status:400})},
+  });
+  const {GET}=ui('src/app/api/v1/items/schedule/route.ts');
+  assert.equal((await GET(new Request('https://synthetic.invalid/api/v1/items/schedule?limit=100'))).status,200);
+  assert.equal(reads,1);
+  for(const query of ['limit=101','limit=0','user_id=foreign','includePromotional=false','limit=30&limit=100']) {
+    assert.equal((await GET(new Request('https://synthetic.invalid/api/v1/items/schedule?'+query))).status,400);
+  }
+  authenticated=false;assert.equal((await GET(new Request('https://synthetic.invalid/api/v1/items/schedule'))).status,400);
+  assert.equal(reads,1);
+});
+
 test("monthly calendar renders Manual AI events, Google events and Action deadlines distinctly", () => {
   const ui = uiLoader();
   const { FullMonthCalendar } = ui("src/components/actions/full-month-calendar.tsx");

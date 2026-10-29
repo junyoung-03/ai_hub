@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import type { ItemList } from "@/lib/items/queries";
-import type { ItemDetailResponse } from "@/types/items";
+import type { ItemDetailResponse, ItemScheduleDetail, ItemSchedulePage } from "@/types/items";
 import type { SearchActionResult } from "@/types/search-ui";
 import { readWorkspaceJson as readJson } from "./workspace-request";
 
@@ -69,7 +69,7 @@ export function useItemDetails(items: LibraryItem[]) {
   return {details,busy:busy || (!error && items.some(item=>!details[item.id])),error,reload};
 }
 export function useScheduleItems(enabled = true) {
-  const [items,setItems] = useState<LibraryItem[]>([]);
+  const [details,setDetails] = useState<Record<string,ItemScheduleDetail>>({});
   const [busy,setBusy] = useState(enabled), [error,setError] = useState("");
   const [cursor,setCursor] = useState<string|null>(null), [requestCursor,setRequestCursor] = useState<string|null>(null);
   const [version,setVersion] = useState(0);
@@ -84,16 +84,19 @@ export function useScheduleItems(enabled = true) {
     async function run() {
       setBusy(true); setError("");
       try {
-        // Schedule data is protected even when the owner marks its source promotional.
-        const params = new URLSearchParams({limit:"100",includePromotional:"true"}); if(requestCursor)params.set("cursor",requestCursor);
-        const page = await readJson<ItemList>(`/api/v1/items?${params}`,controller.signal);
-        if (!controller.signal.aborted) { setItems(previous=>requestCursor ? [...previous,...page.items] : page.items);setCursor(page.nextCursor); }
+        // The schedule projection includes protected dates regardless of promotional visibility.
+        const params = new URLSearchParams({limit:"100"}); if(requestCursor)params.set("cursor",requestCursor);
+        const page = await readJson<ItemSchedulePage>(`/api/v1/items/schedule?${params}`,controller.signal);
+        if (!controller.signal.aborted) {
+          const loaded = Object.fromEntries(page.items.map(detail => [detail.item.id, detail]));
+          setDetails(previous => requestCursor ? { ...previous, ...loaded } : loaded);
+          setCursor(page.nextCursor);
+        }
       } catch (failure) { if(!controller.signal.aborted)setError(failure instanceof Error ? failure.message : "일정을 불러오지 못했습니다."); }
       finally { if(!controller.signal.aborted)setBusy(false); }
     }
     void run(); return ()=>controller.abort();
   }, [enabled,requestCursor,version]);
-  const detail = useItemDetails(items);
-  return {items,details:detail.details,busy:busy || detail.busy,error:error || detail.error,hasMore:!!cursor,
-    loadMore:()=>setRequestCursor(cursor),reload:()=>{reload();detail.reload();}};
+  return {items:Object.values(details).map(detail => detail.item),details,busy:enabled && busy,error,hasMore:!!cursor,
+    loadMore:()=>setRequestCursor(cursor),reload};
 }

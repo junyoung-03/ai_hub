@@ -12,7 +12,7 @@ import { effectiveClassification, safeOriginalUrl, safeEvidenceLocator } from "@
 import { validateAnalysis } from "@/lib/gemini/validation";
 import { analysisDateContext, type AnalysisDateContext } from "@/lib/gemini/date-context";
 import type { Json } from "@/types/database";
-import type { Action, Evidence, EventObservation, ItemDetailResponse } from "@/types/items";
+import type { Action, Evidence, EventObservation, ItemDetailResponse, ItemSchedulePage } from "@/types/items";
 
 export class ItemReadError extends Error {
   constructor() { super("자료를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."); }
@@ -191,6 +191,31 @@ export async function getItemDetail(itemId: string): Promise<ItemDetailResponse 
     actions, evidence, ...storedAnalysis(item.metadata, item.content_text, analysisDateContext(item)),
     processing: processing.get(item.id)!,
     original: { url: google ? safeOriginalUrl(item.original_url) : null, previewType: google ? "google" as const : item.source === "upload" ? "upload" as const : "text" as const },
+  };
+}
+
+/** Read only what calendars need in one owner-scoped page; reuse stored evidence validation. */
+export async function getScheduleItems(input: ItemQuery): Promise<ItemSchedulePage> {
+  const user = await requireUser();
+  const client = await createClient();
+  let query = client.from("items")
+    .select("id,title,source,content_text,created_at,source_created_at,metadata")
+    .eq("user_id", user.id);
+  if (input.position) {
+    const time = filterLiteral(input.position.createdAt);
+    query = query.or(`created_at.lt.${time},and(created_at.eq.${time},id.lt.${input.position.id})`);
+  }
+  const { data, error } = await query.order("created_at", { ascending: false }).order("id", { ascending: false }).limit(input.limit + 1);
+  if (error || !data) throw new ItemReadError();
+  const page = data.slice(0, input.limit);
+  const last = page.at(-1);
+  return {
+    items: page.map(row => ({
+      item: { id: row.id, title: row.title, source: row.source, contentText: row.source === "calendar" ? row.content_text?.slice(0, 220) ?? null : null },
+      calendar: row.source === "calendar" ? calendarDetail(row.metadata) : null,
+      eventObservations: storedAnalysis(row.metadata, row.content_text, analysisDateContext(row)).eventObservations,
+    })),
+    nextCursor: data.length > input.limit && last ? encodeCursor({ id: last.id, createdAt: last.created_at }, input) : null,
   };
 }
 
