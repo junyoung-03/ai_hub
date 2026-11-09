@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Hub — 시스템 아키텍처 및 데이터 흐름도</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --panel-bg: rgba(16, 24, 40, 0.75);
+      --card-bg: #131d31;
+      --card-hover: #1c2b45;
+      --border: #22324f;
+      --border-accent: #3b82f6;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-blue: #38bdf8;
+      --accent-green: #34d399;
+      --accent-purple: #c084fc;
+      --accent-amber: #fbbf24;
+      --accent-rose: #f43f5e;
+      --accent-cyan: #22d3ee;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      padding: 32px 24px;
+      line-height: 1.5;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 12px var(--accent-green);
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-left: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: var(--accent-blue);
+    }
+
+    /* Canvas / Flow Container */
+    .flow-container {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+
+    /* Groups / Sections */
+    .group-box {
+      background: var(--panel-bg);
+      border: 1.5px dashed var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      position: relative;
+      backdrop-filter: blur(8px);
+      transition: border-color 0.2s ease;
+    }
+    .group-box:hover {
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+    .group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .group-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent-blue);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .group-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* Inner Node Cards */
+    .node {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+    .node:last-child { margin-bottom: 0; }
+    .node:hover {
+      background: var(--card-hover);
+      border-color: var(--accent-blue);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+    .node-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .node-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .node-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Colors by category */
+    .c-blue { border-left: 3px solid var(--accent-blue); }
+    .c-green { border-left: 3px solid var(--accent-green); }
+    .c-purple { border-left: 3px solid var(--accent-purple); }
+    .c-amber { border-left: 3px solid var(--accent-amber); }
+    .c-rose { border-left: 3px solid var(--accent-rose); }
+
+    .tag-blue { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); }
+    .tag-green { background: rgba(52, 211, 153, 0.15); color: var(--accent-green); }
+    .tag-purple { background: rgba(192, 132, 252, 0.15); color: var(--accent-purple); }
+    .tag-amber { background: rgba(251, 191, 36, 0.15); color: var(--accent-amber); }
+    .tag-rose { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
+
+    /* Layout Positioning */
+    .col-user   { grid-column: span 3; }
+    .col-source { grid-column: span 3; }
+    .col-engine { grid-column: span 3; }
+    .col-db     { grid-column: span 3; }
+
+    .full-width { grid-column: 1 / -1; }
+
+    /* Connectors & Arrows */
+    .arrow-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--text-dim);
+      margin: 4px 0;
+      gap: 6px;
+    }
+
+    /* Highlight Banner */
+    .banner {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.08) 0%, rgba(192, 132, 252, 0.08) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .banner-text {
+      font-size: 12px;
+      color: var(--text);
+    }
+    .banner-text strong {
+      color: var(--accent-blue);
+    }
+
+    /* Legend */
+    .legend {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 20px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .legend-title {
+      font-weight: 700;
+      color: #fff;
+      margin-right: 6px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation & Header -->
+  <div class="header">
+    <div class="header-title">
+      <div class="status-dot"></div>
+      <h1>AI Hub — 개인 지식 및 업무 통합 AI 어시스턴트</h1>
+      <span class="subtitle">End-to-End 시스템 아키텍처 및 자동화 데이터 파이프라인</span>
+    </div>
+    <div class="badge">
+      <span>Production Vercel + Supabase</span>
+    </div>
+  </div>
+
+  <!-- Highlight Banner -->
+  <div class="banner">
+    <div class="banner-text">
+      💡 <strong>핵심 가치</strong>: 흩어진 이메일(Gmail)·문서(Drive)·일정(Calendar)·로컬 파일을 단일 허브로 수집하고, <strong>Gemini AI</strong>가 본문 근거(Evidence)와 마감일을 스스로 분석하여 <strong>스마트 플래너 & RAG 검색</strong>으로 연결합니다.
+    </div>
+    <div class="badge" style="background: rgba(52, 211, 153, 0.1); border-color: rgba(52, 211, 153, 0.3); color: var(--accent-green);">
+      다중 사용자(Multi-User) 실시간 처리 지원
+    </div>
+  </div>
+
+  <!-- Architecture Flow Grid -->
+  <div class="flow-container">
+
+    <!-- 1. 사용자 접점 (UI Layer) -->
+    <div class="group-box col-user">
+      <div class="group-header">
+        <span class="group-title">
+          <span>🖥️</span> 1. 클라이언트 / 인터페이스
+        </span>
+        <span class="group-desc">Next.js 16 App Router</span>
+      </div>
+
+      <div class="node c-blue">
+        <div class="node-title">
+          <span>Today 대시보드</span>
+          <span class="node-tag tag-blue">React 19</span>
+        </div>
+        <div class="node-desc">오늘의 할 일, 캘린더 일정, 우선순위 마감일 실시간 종합 뷰</div>
+      </div>
+
+      <div class="node c-blue">
+        <div class="node-title">
+          <span>스마트 플래너 Workspace</span>
+          <span class="node-tag tag-blue">Client Component</span>
+        </div>
+        <div class="node-desc">AI가 도출한 마감 일정(전체/오늘/이번 주/예정) 관리 및 완료 처리</div>
+      </div>
+
+      <div class="node c-blue">
+        <div class="node-title">
+          <span>근거 기반 RAG 검색</span>
+          <span class="node-tag tag-cyan">Semantic & Keyword</span>
+        </div>
+        <div class="node-desc">수집된 원본 본문을 인용하여 질문에 직접 답변하는 RAG 엔진</div>
+      </div>
+
+      <div class="node c-blue">
+        <div class="node-title">
+          <span>통합 라이브러리 & 상세 탭</span>
+          <span class="node-tag tag-blue">Responsive Tab</span>
+        </div>
+        <div class="node-desc">원문 텍스트, AI 추출 근거(하이라이팅), 메타데이터 열람</div>
+      </div>
+    </div>
+
+    <!-- 2. 데이터 수집 파이프라인 (Data Ingestion) -->
+    <div class="group-box col-source">
+      <div class="group-header">
+        <span class="group-title">
+          <span>📥</span> 2. 데이터 연동 & 수집 파이프라인
+        </span>
+        <span class="group-desc">Google OAuth 2.0 & Files</span>
+      </div>
+
+      <div class="node c-purple">
+        <div class="node-title">
+          <span>Gmail 동기화 모듈</span>
+          <span class="node-tag tag-purple">Gmail API v1</span>
+        </div>
+        <div class="node-desc">수동 100건 스캔 및 Cron 기반 15분 백그라운드 자동 수집</div>
+      </div>
+
+      <div class="node c-purple">
+        <div class="node-title">
+          <span>Google Drive / Docs</span>
+          <span class="node-tag tag-purple">Docs API</span>
+        </div>
+        <div class="node-desc">폴더/파일 단위 Docs 문서 추출 및 modifiedTime 변경 감지</div>
+      </div>
+
+      <div class="node c-purple">
+        <div class="node-title">
+          <span>Google Calendar 수집</span>
+          <span class="node-tag tag-purple">Calendar API</span>
+        </div>
+        <div class="node-desc">일정 날짜와 행동 마감을 분리하여 중복 없는 캐시 프로젝션 로드</div>
+      </div>
+
+      <div class="node c-purple">
+        <div class="node-title">
+          <span>로컬 파일 & OCR 파서</span>
+          <span class="node-tag tag-amber">Tesseract / PDF.js</span>
+        </div>
+        <div class="node-desc">브라우저 내 WASM OCR로 서버 부하 없이 이미지/PDF 텍스트 추출</div>
+      </div>
+    </div>
+
+    <!-- 3. AI 분석 & 비동기 작업 큐 (AI & Processing Engine) -->
+    <div class="group-box col-engine">
+      <div class="group-header">
+        <span class="group-title">
+          <span>⚡</span> 3. AI 구조화 & 작업 스케줄러
+        </span>
+        <span class="group-desc">Gemini + Scheduler</span>
+      </div>
+
+      <div class="node c-green">
+        <div class="node-title">
+          <span>Gemini AI 분석 엔진</span>
+          <span class="node-tag tag-green">Gemini 1.5 / Flash</span>
+        </div>
+        <div class="node-desc">엄격한 JSON Schema 기반 Structured Outputs로 할 일/마감일/분류 추출</div>
+      </div>
+
+      <div class="node c-green">
+        <div class="node-title">
+          <span>Evidence 근거 검증기</span>
+          <span class="node-tag tag-green">Zero Hallucination</span>
+        </div>
+        <div class="node-desc">AI가 도출한 문장이 원본 텍스트에 실제 존재하는지 Unicode 오프셋 검증</div>
+      </div>
+
+      <div class="node c-amber">
+        <div class="node-title">
+          <span>비동기 큐 관리자 (Lease)</span>
+          <span class="node-tag tag-amber">Queue Worker</span>
+        </div>
+        <div class="node-desc">180초 Lease 잠금, 5회 지수 백오프 재시도 및 중단 작업 자동 복구</div>
+      </div>
+
+      <div class="node c-amber">
+        <div class="node-title">
+          <span>스케줄러 (pg_cron & pg_net)</span>
+          <span class="node-tag tag-amber">HMAC Dispatcher</span>
+        </div>
+        <div class="node-desc">2분 단위 단기 HMAC 전자서명 요청을 통한 안전한 백그라운드 트리거</div>
+      </div>
+    </div>
+
+    <!-- 4. 데이터베이스 및 저장소 (Storage & Security) -->
+    <div class="group-box col-db">
+      <div class="group-header">
+        <span class="group-title">
+          <span>🗄️</span> 4. 데이터베이스 & 보안 계층
+        </span>
+        <span class="group-desc">Supabase PostgreSQL 17</span>
+      </div>
+
+      <div class="node c-rose">
+        <div class="node-title">
+          <span>원자적 저장 프로시저 (RPC)</span>
+          <span class="node-tag tag-rose">PL/pgSQL</span>
+        </div>
+        <div class="node-desc">persist_gmail_item_analysis: 아이템·분류·할일·근거를 트랜잭션 1회로 원자적 저장</div>
+      </div>
+
+      <div class="node c-rose">
+        <div class="node-title">
+          <span>사용자 데이터 격리 (RLS)</span>
+          <span class="node-tag tag-rose">Security</span>
+        </div>
+        <div class="node-desc">모든 테이블에 Row Level Security 강제 적용으로 타 사용자 데이터 접근 원천 차단</div>
+      </div>
+
+      <div class="node c-rose">
+        <div class="node-title">
+          <span>Supabase Vault 키 관리</span>
+          <span class="node-tag tag-rose">Vault Encryption</span>
+        </div>
+        <div class="node-desc">OAuth Refresh 토큰 및 암호화 시크릿을 DB 내부 Vault에 안전 보관</div>
+      </div>
+
+      <div class="node c-rose">
+        <div class="node-title">
+          <span>진단 및 동기화 이력 로그</span>
+          <span class="node-tag tag-rose">Audit Log</span>
+        </div>
+        <div class="node-desc">private.analysis_diagnostic_history를 통해 에러 코드와 처리 상태만 위생 저장</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Legend & Tech Details Footer -->
+  <div class="legend">
+    <span class="legend-title">구분 범례:</span>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--accent-blue);"></div>
+      <span>클라이언트 / UI (Next.js 16)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--accent-purple);"></div>
+      <span>외부 연동 (Google APIs, OCR)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--accent-green);"></div>
+      <span>AI 지능형 분석 (Gemini LLM)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--accent-amber);"></div>
+      <span>비동기 큐 & 스케줄러 (Queue Worker)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background: var(--accent-rose);"></div>
+      <span>DB & 보안 (Supabase Postgres RLS)</span>
+    </div>
+  </div>
+
+</body>
+</html>
