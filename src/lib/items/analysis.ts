@@ -73,25 +73,28 @@ export async function analyzeOwnedItem(itemId: string, gmailOnly = false) {
   if (!analysisEligible(item)) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   if (!item.content_text?.trim() || item.content_text.length > 200_000) throw new ItemAnalysisError("INVALID_ANALYSIS_INPUT");
   if (item.source === "gmail" && process.env.GMAIL_ANALYSIS_WORKER_ENABLED === "true") {
-    let scope: ReturnType<typeof freeAnalysisScope>;
+    let scope: ReturnType<typeof freeAnalysisScope> | null = null;
     try { scope = freeAnalysisScope(); }
-    catch { throw new ItemAnalysisError("ANALYSIS_WORKER_UNAVAILABLE"); }
-    if (!scope.users.includes(user.id.toLowerCase())) throw new ItemAnalysisError("ANALYSIS_SCOPE_UNAVAILABLE");
-    const automatic = await analysisJobRpc(supabase, "gmail_automatic_available", {});
-    const autoEnabled = !automatic.error && automatic.data === true;
-    if (!autoEnabled && !scope.items.includes(itemId.toLowerCase())) throw new ItemAnalysisError("ANALYSIS_SCOPE_UNAVAILABLE");
-    // Admission and the returned state share a transaction; a live claim is not a new queued job.
-    const queued = await analysisJobRpc(supabase, autoEnabled ? "request_automatic_gmail_analysis" : "request_gmail_analysis", { p_item_id: itemId });
-    if (queued.error) throw new ItemAnalysisError(queued.error.code === "22023" ? "INVALID_ANALYSIS_INPUT"
-      : queued.error.code === "PT403" ? "ANALYSIS_SCOPE_UNAVAILABLE" : queued.error.code === "PT503" ? "ANALYSIS_WORKER_PAUSED"
-      : queued.error.code === "PT502" ? "ANALYSIS_WORKER_UNAVAILABLE" : "ANALYSIS_STORAGE_UNAVAILABLE");
-    const job = record(queued.data);
-    if (job?.state === "running") throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
-    if (job?.state === "complete" && (job.processingStatus === "indexing" || job.processingStatus === "completed")) {
-      return { queued: false, cached: true, processing_status: job.processingStatus };
+    catch { scope = null; }
+    const isWorkerUser = Boolean(scope?.users.includes(user.id.toLowerCase()));
+    if (isWorkerUser) {
+      const automatic = await analysisJobRpc(supabase, "gmail_automatic_available", {});
+      const autoEnabled = !automatic.error && automatic.data === true;
+      if (autoEnabled || scope?.items.includes(itemId.toLowerCase())) {
+        // Admission and the returned state share a transaction; a live claim is not a new queued job.
+        const queued = await analysisJobRpc(supabase, autoEnabled ? "request_automatic_gmail_analysis" : "request_gmail_analysis", { p_item_id: itemId });
+        if (queued.error) throw new ItemAnalysisError(queued.error.code === "22023" ? "INVALID_ANALYSIS_INPUT"
+          : queued.error.code === "PT403" ? "ANALYSIS_SCOPE_UNAVAILABLE" : queued.error.code === "PT503" ? "ANALYSIS_WORKER_PAUSED"
+          : queued.error.code === "PT502" ? "ANALYSIS_WORKER_UNAVAILABLE" : "ANALYSIS_STORAGE_UNAVAILABLE");
+        const job = record(queued.data);
+        if (job?.state === "running") throw new ItemAnalysisError("ANALYSIS_IN_PROGRESS");
+        if (job?.state === "complete" && (job.processingStatus === "indexing" || job.processingStatus === "completed")) {
+          return { queued: false, cached: true, processing_status: job.processingStatus };
+        }
+        if ((job?.state !== "pending" && job?.state !== "retry") || typeof job.processingStatus !== "string") throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
+        return { queued: true, processing_status: job.processingStatus, job_state: job.state };
+      }
     }
-    if ((job?.state !== "pending" && job?.state !== "retry") || typeof job.processingStatus !== "string") throw new ItemAnalysisError("ANALYSIS_STORAGE_UNAVAILABLE");
-    return { queued: true, processing_status: job.processingStatus, job_state: job.state };
   }
   let { model } = getGeminiConfig();
   const dateContext = analysisDateContext(item);

@@ -146,3 +146,4 @@ vite.config.ts.timestamp-*
 public/ocr/
 .vercel
 .analysis-worker/
+.env*
